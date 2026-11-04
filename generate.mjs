@@ -447,8 +447,9 @@ async function printSection(page, file) {
     });
 
   } finally {
-    await pdfPage.close();
+    await pdfContext.close();
   }
+
 
   console.log(`PDF finalise : ${file}`);
 }
