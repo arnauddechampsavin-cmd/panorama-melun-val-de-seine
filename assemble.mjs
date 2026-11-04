@@ -9,10 +9,8 @@ import {
 } from 'pdf-lib';
 
 // =====================================================
-// PANORAMA TERRITORIAL - CAMVS
-// ASSEMBLAGE VERSION 6
-// Couverture + sommaire + indicateurs cles
-// + 13 sous-thematiques
+// PANORAMA TERRITORIAL - MELUN VAL DE SEINE
+// ASSEMBLAGE VERSION 6 CORRIGEE
 // =====================================================
 
 const OUT = 'output';
@@ -52,7 +50,7 @@ const themes = [
 ];
 
 // =====================================================
-// UTILITAIRES
+// 1. UTILITAIRES
 // =====================================================
 
 const escapeHTML = value => String(value ?? '')
@@ -71,15 +69,13 @@ async function imageData(filename) {
     bytes.toString('base64');
 }
 
-async function readImageData(filename) {
-  const bytes = await fs.readFile(filename);
-
+function bufferToData(buffer) {
   return 'data:image/png;base64,' +
-    bytes.toString('base64');
+    buffer.toString('base64');
 }
 
 // =====================================================
-// 1. CHARGER LES PDF INDIVIDUELS
+// 2. CHARGER LES PDF INDIVIDUELS
 // =====================================================
 
 const report = JSON.parse(
@@ -98,7 +94,7 @@ if (
   successful.length !== report.length
 ) {
   throw new Error(
-    'Assemblage interrompu : certaines rubriques ont echoue.'
+    'Assemblage impossible : certaines rubriques ont echoue.'
   );
 }
 
@@ -123,7 +119,7 @@ console.log(
 );
 
 // =====================================================
-// 2. CHARGER LES ILLUSTRATIONS
+// 3. CHARGER LES ILLUSTRATIONS
 // =====================================================
 
 const banner = await imageData(
@@ -144,14 +140,16 @@ const edition = new Date().toLocaleDateString(
 );
 
 // =====================================================
-// 3. RECUPERER LES INDICATEURS CLES HUWISE
+// 4. CAPTURER LES INDICATEURS CLES HUWISE
 // =====================================================
 
 const browser = await chromium.launch({
   headless: true
 });
 
-let overviewImage;
+let statsImage;
+let featuresImage;
+let mapImage;
 
 try {
   const context = await browser.newContext({
@@ -169,9 +167,7 @@ try {
     timeout: 90000
   });
 
-  // Neutraliser la fenetre de cookies
-  // uniquement dans le robot.
-
+  // Masquer la fenetre de cookies.
   await page.addStyleTag({
     content: `
       ods-manage-cookies-preferences-modal,
@@ -183,117 +179,129 @@ try {
     `
   });
 
+  const overview = page.locator(
+    'section.panorama-overview'
+  ).first();
+
+  await overview.waitFor({
+    state: 'visible',
+    timeout: 30000
+  });
+
+  const stats = overview.locator(
+    '.panorama-overview-stats'
+  ).first();
+
+  const features = overview.locator(
+    '.panorama-overview-features'
+  ).first();
+
+  const map = overview.locator(
+    '.panorama-overview-map'
+  ).first();
+
+  await stats.waitFor({
+    state: 'visible',
+    timeout: 30000
+  });
+
+  await features.waitFor({
+    state: 'visible',
+    timeout: 30000
+  });
+
+  await map.waitFor({
+    state: 'visible',
+    timeout: 30000
+  });
+
+  // Verifier que la carte est chargee.
+  const mapPicture = map.locator('img').first();
+
+  await mapPicture.waitFor({
+    state: 'visible',
+    timeout: 30000
+  });
+
+  await mapPicture.evaluate(async img => {
+    if (!img.complete) {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(
+            new Error('Chargement carte trop long')
+          ),
+          20000
+        );
+
+        const finish = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+
+        img.addEventListener('load', finish, {
+          once: true
+        });
+
+        img.addEventListener('error', finish, {
+          once: true
+        });
+      });
+    }
+
+    if (img.naturalWidth === 0) {
+      throw new Error(
+        'Image de la carte non chargee'
+      );
+    }
+  });
+
   await page.evaluate(async () => {
     await document.fonts.ready;
   });
 
-  // Attendre les donnees et la carte.
-  await page.waitForTimeout(5000);
+  // Capturer chaque bloc independamment.
+  // Le scrollIntoViewIfNeeded est gere par
+  // Playwright lors de chaque screenshot.
 
-  // Trouver la zone des indicateurs cles.
-  // On utilise les titres visibles plutot qu'une
-  // classe CSS specifique, pour limiter la
-  // dependance a la structure HUWISE.
-
-  const bounds = await page.evaluate(() => {
-    const elements = [
-      ...document.querySelectorAll(
-        'h1, h2, h3, h4, label, div, span'
-      )
-    ];
-
-    const findText = pattern => {
-      return elements.find(el => {
-        const text = (
-          el.innerText || ''
-        ).trim();
-
-        return (
-          text.length < 100 &&
-          pattern.test(text) &&
-          el.getBoundingClientRect().height > 0
-        );
-      });
-    };
-
-    const heading = findText(
-      /indicateurs cl[eé]s du territoire/i
-    );
-
-    const filter = findText(
-      /filtrer par commune/i
-    );
-
-    if (!heading || !filter) {
-      return null;
-    }
-
-    const headingRect =
-      heading.getBoundingClientRect();
-
-    const filterRect =
-      filter.getBoundingClientRect();
-
-    const top =
-      headingRect.top + window.scrollY - 12;
-
-    const bottom =
-      filterRect.top + window.scrollY - 12;
-
-    if (
-      bottom <= top ||
-      bottom - top < 100 ||
-      bottom - top > 1800
-    ) {
-      return null;
-    }
-
-    return {
-      x: 0,
-      y: Math.max(0, top),
-      width: 1600,
-      height: bottom - Math.max(0, top)
-    };
-  });
-
-  if (!bounds) {
-    throw new Error(
-      'Zone des indicateurs cles introuvable. ' +
-      'Verifier les titres sur la page HUWISE.'
-    );
-  }
-
-  // Faire defiler la zone pour declencher
-  // le chargement de ses visualisations.
-
-  await page.evaluate(y => {
-    window.scrollTo(0, y);
-  }, bounds.y);
-
-  await page.waitForTimeout(3000);
-
-  // Capture haute resolution de la zone.
-  // Elle contient les valeurs et la carte
-  // telles qu'affichees sur HUWISE.
-
-  const overviewPath = path.join(
-    OUT,
-    '00-indicateurs-cles.png'
-  );
-
-  await page.screenshot({
-    path: overviewPath,
-    clip: bounds,
+  const statsBuffer = await stats.screenshot({
+    type: 'png',
     animations: 'disabled',
     timeout: 60000
   });
 
-  overviewImage = await readImageData(
-    overviewPath
+  const featuresBuffer = await features.screenshot({
+    type: 'png',
+    animations: 'disabled',
+    timeout: 60000
+  });
+
+  const mapBuffer = await map.screenshot({
+    type: 'png',
+    animations: 'disabled',
+    timeout: 60000
+  });
+
+  statsImage = bufferToData(statsBuffer);
+  featuresImage = bufferToData(featuresBuffer);
+  mapImage = bufferToData(mapBuffer);
+
+  await fs.writeFile(
+    path.join(OUT, '00-indicateurs-chiffres.png'),
+    statsBuffer
+  );
+
+  await fs.writeFile(
+    path.join(OUT, '00-indicateurs-territoire.png'),
+    featuresBuffer
+  );
+
+  await fs.writeFile(
+    path.join(OUT, '00-indicateurs-carte.png'),
+    mapBuffer
   );
 
   console.log(
-    'Indicateurs cles captures depuis HUWISE'
+    'Indicateurs cles : trois blocs captures'
   );
 
   await context.close();
@@ -303,7 +311,7 @@ try {
 }
 
 // =====================================================
-// 4. CALCULER LA PAGINATION
+// 5. CALCULER LA PAGINATION
 // =====================================================
 
 // Page 1 : couverture
@@ -319,7 +327,7 @@ for (const section of sections) {
 }
 
 // =====================================================
-// 5. STYLES GENERAUX
+// 6. STYLES GENERAUX
 // =====================================================
 
 const baseCSS = `
@@ -361,7 +369,7 @@ const baseCSS = `
 `;
 
 // =====================================================
-// 6. COUVERTURE
+// 7. COUVERTURE
 // =====================================================
 
 const coverHTML = `
@@ -449,7 +457,7 @@ const coverHTML = `
 `;
 
 // =====================================================
-// 7. SOMMAIRE ILLUSTRE
+// 8. SOMMAIRE ILLUSTRE
 // =====================================================
 
 const tocGroups = themes.map(theme => {
@@ -592,7 +600,7 @@ const tocHTML = `
 `;
 
 // =====================================================
-// 8. PAGE INDICATEURS CLES
+// 9. PAGE DES INDICATEURS CLES
 // =====================================================
 
 const overviewHTML = `
@@ -639,26 +647,62 @@ const overviewHTML = `
     width:28mm;
     height:1.2mm;
     background:#F24E4C;
-    margin-bottom:5mm;
+    margin-bottom:7mm;
   "></div>
 
   <div style="
-    width:100%;
-    height:143mm;
-    display:flex;
+    display:grid;
+    grid-template-columns:
+      27% 27% minmax(0, 1fr);
+    gap:5mm;
+    height:135mm;
     align-items:center;
-    justify-content:center;
-    overflow:hidden;
   ">
 
-    <img src="${overviewImage}" style="
-      display:block;
-      max-width:100%;
-      max-height:100%;
-      width:auto;
-      height:auto;
-      object-fit:contain;
+    <div style="
+      min-width:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
     ">
+      <img src="${statsImage}" style="
+        display:block;
+        width:100%;
+        height:auto;
+        max-height:135mm;
+        object-fit:contain;
+      ">
+    </div>
+
+    <div style="
+      min-width:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    ">
+      <img src="${featuresImage}" style="
+        display:block;
+        width:100%;
+        height:auto;
+        max-height:135mm;
+        object-fit:contain;
+      ">
+    </div>
+
+    <div style="
+      min-width:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    ">
+      <img src="${mapImage}" style="
+        display:block;
+        width:100%;
+        height:auto;
+        max-height:135mm;
+        object-fit:contain;
+      ">
+    </div>
 
   </div>
 
@@ -687,7 +731,7 @@ const overviewHTML = `
 `;
 
 // =====================================================
-// 9. GENERER LES TROIS PAGES D'INTRODUCTION
+// 10. GENERER LES TROIS PAGES D'INTRODUCTION
 // =====================================================
 
 const introBrowser = await chromium.launch({
@@ -750,7 +794,7 @@ try {
 }
 
 // =====================================================
-// 10. ASSEMBLAGE FINAL
+// 11. ASSEMBLAGE FINAL
 // =====================================================
 
 const finalPDF = await PDFDocument.create();
@@ -789,7 +833,7 @@ for (const section of sections) {
 }
 
 // =====================================================
-// 11. PAGINATION
+// 12. PAGINATION
 // =====================================================
 
 const font = await finalPDF.embedFont(
@@ -799,12 +843,8 @@ const font = await finalPDF.embedFont(
 const pages = finalPDF.getPages();
 const total = pages.length;
 
-// La couverture n'a pas de numero.
-// La page des indicateurs est la page 3.
-
 for (let index = 2; index < total; index++) {
   const page = pages[index];
-
   const { width } = page.getSize();
 
   const label = `${index + 1} / ${total}`;
@@ -819,7 +859,7 @@ for (let index = 2; index < total; index++) {
 }
 
 // =====================================================
-// 12. METADONNEES ET ENREGISTREMENT
+// 13. METADONNEES ET ENREGISTREMENT
 // =====================================================
 
 finalPDF.setTitle(
