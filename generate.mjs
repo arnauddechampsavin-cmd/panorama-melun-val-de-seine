@@ -71,18 +71,41 @@ async function selectSection(page, groupIndex, itemIndex) {
 
   await item.click({ force: true });
 
-  // Verifier que la bonne rubrique est selectionnee
-  await page.waitForFunction(({ groupIndex, itemIndex }) => {
-    const group = document.querySelectorAll(
-      '.sidebar-nav .cl-dropdown'
-    )[groupIndex];
+  
+  // Vérifier que la sous-thématique est bien activée
+  // en interrogeant directement AngularJS.
 
-    const item = group?.querySelectorAll(
-      '.cl-dropdown-item'
-    )[itemIndex];
+  const expectedSubmenu = await item.getAttribute('ng-click');
 
-    return !!item?.classList.contains('active');
-  }, { groupIndex, itemIndex }, { timeout: 20000 });
+  const match = expectedSubmenu?.match(
+    /activeSubmenu\s*=\s*['"]([^'"]+)['"]/
+  );
+
+  if (!match) {
+    throw new Error(
+      `Identifiant AngularJS introuvable pour la rubrique ${itemIndex}`
+    );
+  }
+
+  const submenuId = match[1];
+
+  console.log(`Sous-thématique attendue : ${submenuId}`);
+
+  await page.waitForFunction(
+    (expected) => {
+      const element = document.querySelector('.sidebar-nav');
+
+      if (!element || !window.angular) return false;
+
+      const scope = window.angular.element(element).scope();
+
+      return scope &&
+        scope.activeSubmenu === expected;
+    },
+    submenuId,
+    { timeout: 30000 }
+  );
+
 
   await page.locator('.content-area .content-section')
     .first().waitFor({ state: 'visible' });
