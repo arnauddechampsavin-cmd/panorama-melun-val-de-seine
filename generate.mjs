@@ -402,41 +402,6 @@ async function printSection(page, file) {
 
   
   // Construire une mise en page editoriale adaptative
-
-  const renderVisual = element => `
-    <div class="pdf-visual">
-      <img
-        src="data:image/png;base64,${element.image}"
-        alt="Visualisation du panorama"
-      >
-    </div>
-  `;
-
-  const renderElement = element => {
-
-    if (element.type === 'cards') {
-      return `
-        <div class="pdf-cards">
-          ${element.cards.map(card => `
-            <div class="pdf-card">
-              ${card.html}
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    if (element.type === 'text') {
-      return `
-        <div class="pdf-text">
-          ${element.html}
-        </div>
-      `;
-    }
-
-    return renderVisual(element);
-  };
-
   
   // VERSION 5C - Composition editoriale
 
