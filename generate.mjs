@@ -1,11 +1,12 @@
 
 import { chromium } from 'playwright';
+import { PDFDocument } from 'pdf-lib';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // =====================================================
 // PANORAMA TERRITORIAL - MELUN VAL DE SEINE
-// VERSION 5D - MISE EN PAGE COMPACTE
+// VERSION 5E - CORRECTION DE LA PAGINATION
 // =====================================================
 
 const URL =
@@ -262,7 +263,7 @@ async function waitForVisuals(page) {
 }
 
 // =====================================================
-// 5. GENERATION PDF - VERSION 5D
+// 5. GENERATION PDF - VERSION 5E
 // =====================================================
 
 async function printSection(page, file) {
@@ -301,9 +302,20 @@ async function printSection(page, file) {
     themeColor = '#8a6ea9';
   }
 
-  // -----------------------------------------------
+  // Gabarits specifiques aux deux rubriques
+  // qui debordaient dans la version 5D.
+
+  const isSenior =
+    /population s[eé]nior/i.test(title);
+
+  const isActive =
+    /population active et inactive/i.test(title);
+
+  const isCompact = isSenior || isActive;
+
+  // -------------------------------------------------
   // 5A. EXTRACTION DES BLOCS
-  // -----------------------------------------------
+  // -------------------------------------------------
 
   const blocks = section.locator(
     '.cards-grid, .chart-section, .map-section'
@@ -311,7 +323,9 @@ async function printSection(page, file) {
 
   const elements = [];
 
-  for (let i = 0; i < await blocks.count(); i++) {
+  const count = await blocks.count();
+
+  for (let i = 0; i < count; i++) {
     const block = blocks.nth(i);
 
     const nested = await block.evaluate(el =>
@@ -384,25 +398,23 @@ async function printSection(page, file) {
     `${title} : ${elements.length} blocs prepares`
   );
 
-  // -----------------------------------------------
-  // 5B. HTML DES INDICATEURS
-  // -----------------------------------------------
+  // -------------------------------------------------
+  // 5B. CONSTRUCTION DU HTML
+  // -------------------------------------------------
 
-  const renderCards = element => {
-    return `
-      <div class="pdf-cards">
-        ${element.cards.map(card => {
-          const isLong = card.textLength > 240;
+  const renderCards = element => `
+    <div class="pdf-cards">
+      ${element.cards.map(card => {
+        const isLong = card.textLength > 240;
 
-          return `
-            <div class="pdf-card ${isLong ? 'pdf-card-long' : ''}">
-              ${card.html}
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `;
-  };
+        return `
+          <div class="pdf-card ${isLong ? 'pdf-card-long' : ''}">
+            ${card.html}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 
   const renderInformation = element => {
     if (element.type === 'cards') {
@@ -425,10 +437,6 @@ async function printSection(page, file) {
     </figure>
   `;
 
-  // -----------------------------------------------
-  // 5C. COMPOSITION EDITORIALE
-  // -----------------------------------------------
-
   const information = elements.filter(
     el => el.type === 'cards' || el.type === 'text'
   );
@@ -437,22 +445,42 @@ async function printSection(page, file) {
     el => el.type === 'visual'
   );
 
-  // Les cartes et les graphiques tres hauts
-  // restent sur toute la largeur.
-  const complexVisual = visuals.some(
-    el => el.ratio < 1.15 ||
-      el.height > 750
-  );
-
   const infoHTML = information
     .map(renderInformation)
     .join('');
 
+  const complexVisual = visuals.some(
+    el => el.ratio < 1.15 || el.height > 750
+  );
+
   let content = '';
 
-  // Gabarit A : informations + deux visuels
-  // de dimensions raisonnables.
-  if (
+  // -------------------------------------------------
+  // 5C. GABARIT SPECIAL POPULATION SENIOR
+  // ET POPULATION ACTIVE / INACTIVE
+  // -------------------------------------------------
+
+  if (isCompact && information.length && visuals.length) {
+    content = `
+      <div class="pdf-layout-compact">
+
+        <div class="pdf-compact-info">
+          ${infoHTML}
+        </div>
+
+        <div class="pdf-compact-visuals">
+          ${visuals.map(renderVisual).join('')}
+        </div>
+
+      </div>
+    `;
+
+    console.log(
+      `Gabarit compact active : ${title}`
+    );
+
+  // Gabarit A : deux visualisations
+  } else if (
     information.length &&
     visuals.length === 2 &&
     !complexVisual
@@ -468,7 +496,7 @@ async function printSection(page, file) {
       </div>
     `;
 
-  // Gabarit B : informations et un visuel.
+  // Gabarit B : une visualisation
   } else if (
     information.length &&
     visuals.length === 1 &&
@@ -485,8 +513,7 @@ async function printSection(page, file) {
       </div>
     `;
 
-  // Gabarit C : informations pleine largeur,
-  // puis visualisations.
+  // Gabarit C : pleine largeur
   } else {
     const visualParts = [];
 
@@ -529,9 +556,9 @@ async function printSection(page, file) {
     `;
   }
 
-  // -----------------------------------------------
-  // 5D. DOCUMENT HTML
-  // -----------------------------------------------
+  // -------------------------------------------------
+  // 5D. STYLES DU DOCUMENT
+  // -------------------------------------------------
 
   const html = `
   <!DOCTYPE html>
@@ -563,8 +590,6 @@ async function printSection(page, file) {
         font-size: 9.5pt;
         line-height: 1.35;
       }
-
-      /* EN-TETE */
 
       .pdf-heading {
         border-bottom: 2px solid #F24E4C;
@@ -732,10 +757,6 @@ async function printSection(page, file) {
         grid-column: span 3;
       }
 
-      .pdf-visuals-full {
-        display: block;
-      }
-
       .pdf-visual-full {
         width: 100%;
         margin-bottom: 4mm;
@@ -755,7 +776,60 @@ async function printSection(page, file) {
         max-height: 135mm;
       }
 
-      /* IMPRESSION */
+      /* VERSION 5E : GABARIT COMPACT */
+
+      .pdf-layout-compact {
+        display: grid;
+        grid-template-columns:
+          48% minmax(0, 1fr);
+        gap: 4mm;
+        align-items: start;
+      }
+
+      .pdf-compact-info {
+        min-width: 0;
+      }
+
+      .pdf-compact-info .pdf-cards {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+        gap: 2mm;
+        margin-bottom: 2mm;
+      }
+
+      .pdf-compact-info .pdf-card {
+        padding: 2mm;
+      }
+
+      .pdf-compact-info .pdf-card-long {
+        grid-column: 1 / -1;
+      }
+
+      .pdf-compact-info .pdf-card .kpi-title {
+        font-size: 17pt;
+      }
+
+      .pdf-compact-info .pdf-card .card_textpano {
+        font-size: 8.5pt;
+        line-height: 1.3;
+      }
+
+      .pdf-compact-info .pdf-card p {
+        margin: 0.5mm 0;
+      }
+
+      .pdf-compact-visuals {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 3mm;
+      }
+
+      .pdf-compact-visuals img {
+        max-height: 78mm;
+      }
+
+      /* PAGINATION */
 
       .pdf-card,
       .pdf-visual,
@@ -788,9 +862,9 @@ async function printSection(page, file) {
   </html>
   `;
 
-  // -----------------------------------------------
-  // 5E. GENERATION DU PDF
-  // -----------------------------------------------
+  // -------------------------------------------------
+  // 5E. IMPRESSION ET CONTROLE
+  // -------------------------------------------------
 
   const pdfContext = await browser.newContext({
     viewport: { width: 1600, height: 1000 },
@@ -822,9 +896,21 @@ async function printSection(page, file) {
       preferCSSPageSize: true
     });
 
+    // Controle du nombre de pages.
+
+    const pdfBytes = await fs.readFile(file);
+    const pdfDocument = await PDFDocument.load(pdfBytes);
+    const pageCount = pdfDocument.getPageCount();
+
     console.log(
-      `Gabarit PDF genere : ${title}`
+      `PDF ${path.basename(file)} : ${pageCount} page(s)`
     );
+
+    if (pageCount > 1) {
+      console.warn(
+        `Pagination a verifier : ${title} (${pageCount} pages)`
+      );
+    }
 
   } finally {
     await pdfContext.close();
