@@ -1,0 +1,12 @@
+
+name: Test GitHub Actions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifier le serveur GitHub
+        run: echo "GitHub Actions fonctionne !"
