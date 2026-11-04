@@ -252,9 +252,9 @@ async function waitForVisuals(page) {
 
 
 
+
 async function printSection(page, file) {
 
-  // 1. Identifier la rubrique actuellement affichee
   const section = page.locator(
     '.content-area .content-section:visible'
   ).first();
@@ -285,79 +285,132 @@ async function printSection(page, file) {
   if (themeClass.includes('theme-entreprises'))
     themeColor = '#8a6ea9';
 
-  // 2. Recuperer les blocs dans leur ordre d'affichage
-  const blocks = section.locator(
-    '.cards-grid, .chart-section, .map-section'
-  );
-
-  const count = await blocks.count();
-  const elements = [];
-
-  for (let i = 0; i < count; i++) {
-
-    const block = blocks.nth(i);
-
-    // Ignorer les blocs imbriques deja captures
-    const nested = await block.evaluate(el => {
-      return !!el.parentElement.closest(
-        '.cards-grid, .chart-section, .map-section'
-      );
-    });
-
-    if (nested) continue;
-
-    const box = await block.boundingBox();
-
-    if (!box || box.height < 5) continue;
-
-    // Capturer le bloc tel qu'il apparait sur le site
-    await block.scrollIntoViewIfNeeded();
-
-    await page.waitForTimeout(350);
-
-    const image = await block.screenshot({
-      type: 'png',
-      animations: 'disabled',
-      timeout: 30000
-    });
-
-    elements.push({
-      image: image.toString('base64'),
-      width: box.width,
-      height: box.height
-    });
-  }
-
-  console.log(
-    `${title} : ${elements.length} blocs captures`
-  );
-
-  // 3. Construire un document independant
-  const escapeHTML = value => String(value)
+  // Echappement du texte pour le HTML
+  const escapeHTML = value => String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-  const content = elements.map((element, index) => `
-    <div class="pdf-block">
-      <img
-        src="data:image/png;base64,${element.image}"
-        alt="Bloc ${index + 1}"
-      >
-    </div>
-  `).join('');
+  // Recuperer uniquement les blocs de premier niveau
+  const blocks = section.locator(
+    '.cards-grid, .chart-section, .map-section'
+  );
+
+  const elements = [];
+  const count = await blocks.count();
+
+  for (let i = 0; i < count; i++) {
+
+    const block = blocks.nth(i);
+
+    const nested = await block.evaluate(el =>
+      !!el.parentElement.closest(
+        '.cards-grid, .chart-section, .map-section'
+      )
+    );
+
+    if (nested) continue;
+
+    const box = await block.boundingBox();
+    if (!box || box.height < 5) continue;
+
+    const isCards = await block.evaluate(el =>
+      el.classList.contains('cards-grid')
+    );
+
+    if (isCards) {
+
+      // Conserver le texte et les indicateurs en HTML
+      const cards = await block.locator(
+        ':scope > .card'
+      ).evaluateAll(nodes => nodes.map(card => ({
+        html: card.innerHTML
+      })));
+
+      if (cards.length > 0) {
+        elements.push({
+          type: 'cards',
+          cards
+        });
+      } else {
+        // Cas des blocs de texte sans .card
+        const html = await block.innerHTML();
+
+        elements.push({
+          type: 'text',
+          html
+        });
+      }
+
+    } else {
+
+      // Capturer uniquement les graphiques et cartes
+      await block.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+
+      const image = await block.screenshot({
+        type: 'png',
+        animations: 'disabled',
+        scale: 'css',
+        timeout: 30000
+      });
+
+      elements.push({
+        type: 'visual',
+        image: image.toString('base64')
+      });
+    }
+  }
+
+  console.log(
+    `${title} : ${elements.length} blocs prepares`
+  );
+
+  // Construire les contenus HTML
+  const content = elements.map(element => {
+
+    if (element.type === 'cards') {
+
+      return `
+        <div class="pdf-cards">
+          ${element.cards.map(card => `
+            <div class="pdf-card">
+              ${card.html}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    if (element.type === 'text') {
+      return `
+        <div class="pdf-text">
+          ${element.html}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="pdf-visual">
+        <img
+          src="data:image/png;base64,${element.image}"
+          alt="Visualisation du panorama"
+        >
+      </div>
+    `;
+  }).join('');
 
   const html = `
   <!DOCTYPE html>
   <html lang="fr">
   <head>
     <meta charset="UTF-8">
-    <style>
 
+    <style>
       @page {
         size: A4 landscape;
-        margin: 12mm;
+        margin: 10mm;
       }
 
       * {
@@ -371,67 +424,117 @@ async function printSection(page, file) {
 
       body {
         font-family: Arial, sans-serif;
-        color: #142e7b;
-        background: white;
+        color: #334155;
+        background: #ffffff;
+        font-size: 10pt;
+        line-height: 1.45;
       }
 
       .pdf-heading {
-        margin-bottom: 7mm;
-        padding-bottom: 4mm;
         border-bottom: 2px solid ${themeColor};
+        padding-bottom: 4mm;
+        margin-bottom: 5mm;
         break-after: avoid;
       }
 
       .pdf-brand {
-        font-size: 9pt;
-        font-weight: 600;
         color: #015ca2;
+        font-size: 8pt;
+        font-weight: 700;
         letter-spacing: 0.5px;
         margin-bottom: 3mm;
       }
 
       h1 {
-        font-size: 20pt;
-        line-height: 1.2;
-        margin: 0 0 3mm;
         color: #142e7b;
+        font-size: 19pt;
+        margin: 0 0 2mm;
+        line-height: 1.2;
       }
 
       .pdf-source {
+        color: #64748b;
         font-size: 9pt;
         font-style: italic;
-        color: #64748b;
       }
 
-      .pdf-block {
+      .pdf-cards {
+        display: grid;
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+        gap: 4mm;
+        margin-bottom: 5mm;
+      }
+
+      .pdf-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 3mm;
+        padding: 4mm;
+        background: #ffffff;
+        break-inside: avoid;
+        min-width: 0;
+      }
+
+      .pdf-card .card__title {
+        color: #64748b;
+        font-size: 10pt;
+        margin: 0 0 2mm;
+      }
+
+      .pdf-card .kpi-title {
+        color: ${themeColor};
+        font-size: 22pt;
+        font-weight: 700;
+        margin: 2mm 0;
+      }
+
+      .pdf-card .description {
+        color: #64748b;
+        font-size: 9pt;
+      }
+
+      .pdf-card .card_textpano {
+        color: #475569;
+        font-size: 9.5pt;
+        line-height: 1.4;
+        margin: 0;
+        padding: 0;
+      }
+
+      .pdf-text {
+        margin-bottom: 5mm;
+        break-inside: avoid;
+      }
+
+      .pdf-visual {
         width: 100%;
-        margin: 0 0 4mm;
+        margin: 4mm 0 6mm;
         break-inside: avoid;
         page-break-inside: avoid;
       }
 
-      .pdf-block img {
+      .pdf-visual img {
         display: block;
         width: 100%;
         height: auto;
-        max-height: 170mm;
+        max-height: 165mm;
         object-fit: contain;
         object-position: top center;
       }
 
-      .pdf-footer {
-        font-size: 8pt;
-        color: #64748b;
-        margin-top: 6mm;
+      .pdf-card,
+      .pdf-visual {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
 
     </style>
   </head>
-  <body>
 
+  <body>
     <div class="pdf-heading">
       <div class="pdf-brand">
-        AGGLOMERATION MELUN VAL DE SEINE
+        AGGLOMÉRATION MELUN VAL DE SEINE
       </div>
 
       <h1>${escapeHTML(title)}</h1>
@@ -442,19 +545,11 @@ async function printSection(page, file) {
     </div>
 
     ${content}
-
-    <div class="pdf-footer">
-      data.melunvaldeseine.fr
-    </div>
-
   </body>
   </html>
   `;
 
-
-  // 4. Ouvrir une page temporaire pour le PDF
-  // dans un nouveau contexte Playwright
-
+  // Creer un contexte independant pour le PDF
   const pdfContext = await browser.newContext({
     viewport: { width: 1600, height: 1000 },
     deviceScaleFactor: 1
@@ -462,9 +557,7 @@ async function printSection(page, file) {
 
   const pdfPage = await pdfContext.newPage();
 
-
   try {
-
     await pdfPage.setContent(html, {
       waitUntil: 'load'
     });
@@ -491,9 +584,9 @@ async function printSection(page, file) {
     await pdfContext.close();
   }
 
-
   console.log(`PDF finalise : ${file}`);
 }
+
 
 
 try {
