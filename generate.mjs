@@ -55,6 +55,27 @@ if (await cookieModal.isVisible().catch(() => false)) {
 // Vérifier que la fenêtre ne bloque plus la page
 await page.waitForTimeout(1000);
 
+
+  // Neutraliser les fenêtres de cookies qui bloquent
+  // les interactions du navigateur automatisé.
+
+  await page.addStyleTag({
+    content: `
+      ods-manage-cookies-preferences-modal,
+      .ods-manage-cookies-preferences,
+      .ods-manage-cookies-preferences-modal,
+      .modal-backdrop {
+        display: none !important;
+        pointer-events: none !important;
+      }
+    `
+  });
+
+  console.log(
+    'Fenêtre de cookies neutralisée pour le robot'
+  );
+
+
   // 2. Découvrir automatiquement les rubriques
   const groups = await page
     .locator('.sidebar-nav .cl-dropdown')
