@@ -321,6 +321,34 @@ async function printSection(page, file) {
 
     if (isCards) {
 
+      
+      // Les indicateurs dynamiques de la rubrique
+      // Entreprises ne peuvent pas toujours etre
+      // reproduits dans une page HTML independante.
+
+      const captureAsImage =
+        title.includes('formes juridiques') ||
+        title.includes('familles d’activités');
+
+      if (captureAsImage) {
+        await block.scrollIntoViewIfNeeded();
+        await page.waitForTimeout(700);
+
+        const image = await block.screenshot({
+          type: 'png',
+          animations: 'disabled',
+          scale: 'css',
+          timeout: 30000
+        });
+
+        elements.push({
+          type: 'visual',
+          image: image.toString('base64')
+        });
+
+        continue;
+      }
+
       // Conserver le texte et les indicateurs en HTML
       const cards = await block.locator(
         ':scope > .card'
