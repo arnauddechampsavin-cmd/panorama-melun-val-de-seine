@@ -120,54 +120,93 @@ async function selectSection(page, groupIndex, itemIndex) {
 
 
 
+
 async function waitForVisuals(page) {
-  // Attendre les indicateurs calcules par HUWISE
-  await page.waitForFunction(() => {
-    const section = [
-      ...document.querySelectorAll(
-        '.content-area .content-section'
-      )
-    ].find(el => el.getBoundingClientRect().height > 0);
 
-    if (!section) return false;
+  // Attendre que la rubrique active soit visible
+  const section = page.locator(
+    '.content-area .content-section:visible'
+  ).first();
 
-    const kpis = [...section.querySelectorAll('.kpi-title')];
-
-    return kpis.every(el => {
-      const value = (el.textContent || '').trim();
-
-      return value &&
-        value !== '%' &&
-        value !== '-' &&
-        value !== 'NaN';
-    });
-  }, null, { timeout: 25000 }).catch(() => {
-    console.warn(
-      'Chargement des indicateurs non confirme'
-    );
+  await section.waitFor({
+    state: 'visible',
+    timeout: 30000
   });
 
-  // Laisser les graphiques et cartes terminer
-  await page.waitForTimeout(5000);
+  // Attendre le chargement des polices
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
 
+  // Parcourir progressivement la page pour
+  // declencher les chargements des visualisations
+  await page.evaluate(async () => {
+    const elements = [
+      ...document.querySelectorAll(
+        '.content-section .chart-section, ' +
+        '.content-section .map-container'
+      )
+    ];
+
+    for (const element of elements) {
+      element.scrollIntoView({
+        block: 'center',
+        behavior: 'instant'
+      });
+
+      await new Promise(resolve =>
+        setTimeout(resolve, 700)
+      );
+    }
+  });
+
+  // Revenir au debut de la rubrique
+  await section.scrollIntoViewIfNeeded();
+
+  // Attendre les images HTML
   await page.evaluate(async () => {
     await Promise.all(
-      [...document.images].map(img =>
-        img.complete
-          ? Promise.resolve()
-          : new Promise(resolve => {
-              img.addEventListener('load', resolve, {
-                once: true
-              });
-              img.addEventListener('error', resolve, {
-                once: true
-              });
-              setTimeout(resolve, 8000);
-            })
-      )
+      [...document.images].map(img => {
+        if (img.complete) return Promise.resolve();
+
+        return new Promise(resolve => {
+          const finish = () => resolve();
+
+          img.addEventListener('load', finish, {
+            once: true
+          });
+
+          img.addEventListener('error', finish, {
+            once: true
+          });
+
+          setTimeout(finish, 8000);
+        });
+      })
     );
   });
+
+  // Attendre les graphiques Highcharts
+  await page.waitForFunction(() => {
+    const charts = document.querySelectorAll(
+      '.content-section ods-chart'
+    );
+
+    return [...charts].every(chart =>
+      chart.querySelector('.highcharts-container')
+    );
+  }, null, { timeout: 15000 }).catch(() => {
+    console.warn(
+      'Certains graphiques ne sont pas confirmes'
+    );
+  });
+
+  // Laisser les cartes terminer leurs chargements
+  await page.waitForTimeout(3500);
+
+  console.log('Visualisations preparees');
 }
+
 
 
 async function printSection(page, file) {
