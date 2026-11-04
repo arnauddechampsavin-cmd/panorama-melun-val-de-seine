@@ -52,6 +52,7 @@ function slug(value) {
     .slice(0, 55);
 }
 
+
 async function selectSection(page, groupIndex, itemIndex) {
   const group = page.locator('.sidebar-nav .cl-dropdown')
     .nth(groupIndex);
@@ -69,47 +70,47 @@ async function selectSection(page, groupIndex, itemIndex) {
   const item = group.locator('.cl-dropdown-item')
     .nth(itemIndex);
 
-  await item.click({ force: true });
+  // Recuperer l'identifiant de la sous-thematique
+  const ngClick = await item.getAttribute('ng-click');
 
-  
-  // Vérifier que la sous-thématique est bien activée
-  // en interrogeant directement AngularJS.
-
-  const expectedSubmenu = await item.getAttribute('ng-click');
-
-  const match = expectedSubmenu?.match(
+  const match = ngClick?.match(
     /activeSubmenu\s*=\s*['"]([^'"]+)['"]/
   );
 
   if (!match) {
     throw new Error(
-      `Identifiant AngularJS introuvable pour la rubrique ${itemIndex}`
+      `Identifiant introuvable pour ${groupIndex}/${itemIndex}`
     );
   }
 
   const submenuId = match[1];
 
-  console.log(`Sous-thématique attendue : ${submenuId}`);
+  console.log(`Sous-thematique attendue : ${submenuId}`);
 
+  // Cliquer sur la sous-thematique
+  await item.click({ force: true });
+
+  // Attendre que le contenu correspondant apparaisse
   await page.waitForFunction(
     (expected) => {
-      const element = document.querySelector('.sidebar-nav');
+      const sections = document.querySelectorAll(
+        '.content-area .content-section'
+      );
 
-      if (!element || !window.angular) return false;
+      return [...sections].some(section => {
+        const condition = section.getAttribute('ng-if') || '';
 
-      const scope = window.angular.element(element).scope();
-
-      return scope &&
-        scope.activeSubmenu === expected;
+        return condition.includes(expected) &&
+          section.getBoundingClientRect().height > 0;
+      });
     },
     submenuId,
     { timeout: 30000 }
   );
 
-
-  await page.locator('.content-area .content-section')
-    .first().waitFor({ state: 'visible' });
+  console.log(`Section affichee : ${submenuId}`);
 }
+
 
 async function waitForVisuals(page) {
   // Attendre les indicateurs calcules par HUWISE
