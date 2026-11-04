@@ -5,15 +5,46 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // =====================================================
-// PANORAMA TERRITORIAL - MELUN VAL DE SEINE
-// VERSION 5E - CORRECTION DE LA PAGINATION
+// PANORAMA TERRITORIAL - CAMVS
+// VERSION 7.2 - ILLUSTRATIONS ET GRAPHIQUES HD
 // =====================================================
 
 const URL =
   'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
 
 const OUT = 'output';
+const ASSETS = 'assets';
 const TIMEOUT = 60000;
+
+const NAVY = '#041447';
+const RED = '#F24E4C';
+
+const THEMES = [
+  {
+    key: 'demographie',
+    name: 'DÉMOGRAPHIE',
+    image: 'population.png',
+    color: '#E79995'
+  },
+  {
+    key: 'emploi',
+    name: 'EMPLOI',
+    image: 'emploi.png',
+    color: '#0D47B3'
+  },
+  {
+    key: 'logements',
+    name: 'LOGEMENTS',
+    image: 'logement.png',
+    color: '#3A8BA9'
+  },
+  {
+    key: 'entreprises',
+    name: 'ENTREPRISES',
+    image: 'entreprises.png',
+    color: '#8A6EA9'
+  }
+];
 
 await fs.mkdir(OUT, { recursive: true });
 
@@ -22,49 +53,27 @@ const browser = await chromium.launch({
 });
 
 const report = [];
+const illustrations = new Map();
 
-// =====================================================
-// 1. OUVERTURE DE HUWISE
-// =====================================================
+for (const theme of THEMES) {
+  const buffer = await fs.readFile(
+    path.join(ASSETS, theme.image)
+  );
 
-async function preparePage() {
-  const page = await browser.newPage({
-  viewport: { width: 1600, height: 1000 },
-  deviceScaleFactor: 3
-});
-
-
-  page.setDefaultTimeout(TIMEOUT);
-
-  await page.goto(URL, {
-    waitUntil: 'domcontentloaded',
-    timeout: 90000
-  });
-
-  await page.locator(
-    '.sidebar-nav .cl-dropdown'
-  ).first().waitFor({ state: 'attached' });
-
-  await page.addStyleTag({
-    content: `
-      ods-manage-cookies-preferences-modal,
-      .ods-manage-cookies-preferences,
-      .modal-backdrop {
-        display: none !important;
-        pointer-events: none !important;
-      }
-    `
-  });
-
-  return page;
+  illustrations.set(
+    theme.key,
+    'data:image/png;base64,' +
+    buffer.toString('base64')
+  );
 }
 
 // =====================================================
-// 2. UTILITAIRES
+// UTILITAIRES
 // =====================================================
 
 function slug(value) {
-  return value.normalize('NFD')
+  return String(value)
+    .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -81,59 +90,123 @@ function escapeHTML(value) {
     .replace(/'/g, '&#39;');
 }
 
+function getTheme(name) {
+  const normalized = slug(name);
+
+  return THEMES.find(theme =>
+    normalized.includes(theme.key)
+  ) || THEMES.find(theme =>
+    normalized === slug(theme.name)
+  );
+}
+
 // =====================================================
-// 3. NAVIGATION ANGULARJS
+// 1. OUVERTURE HUWISE
 // =====================================================
 
-async function selectSection(page, groupIndex, itemIndex) {
-  const group = page
-    .locator('.sidebar-nav .cl-dropdown')
-    .nth(groupIndex);
+async function preparePage() {
+  const page = await browser.newPage({
+    viewport: {
+      width: 1600,
+      height: 1000
+    },
+    deviceScaleFactor: 3
+  });
 
-  const button = group.locator('.cl-dropdown-button');
+  page.setDefaultTimeout(TIMEOUT);
 
-  const item = group
-    .locator('.cl-dropdown-item')
-    .nth(itemIndex);
+  await page.goto(URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 90000
+  });
 
-  const ngClick = await item.getAttribute('ng-click');
+  await page.locator(
+    '.sidebar-nav .cl-dropdown'
+  ).first().waitFor({
+    state: 'attached'
+  });
+
+  await page.addStyleTag({
+    content: `
+      ods-manage-cookies-preferences-modal,
+      .ods-manage-cookies-preferences,
+      .modal-backdrop {
+        display:none !important;
+        pointer-events:none !important;
+      }
+    `
+  });
+
+  return page;
+}
+
+// =====================================================
+// 2. NAVIGATION ANGULARJS
+// =====================================================
+
+async function selectSection(
+  page,
+  groupIndex,
+  itemIndex
+) {
+  const group = page.locator(
+    '.sidebar-nav .cl-dropdown'
+  ).nth(groupIndex);
+
+  const button = group.locator(
+    '.cl-dropdown-button'
+  );
+
+  const item = group.locator(
+    '.cl-dropdown-item'
+  ).nth(itemIndex);
+
+  const ngClick = await item.getAttribute(
+    'ng-click'
+  );
 
   const match = ngClick?.match(
     /activeSubmenu\s*=\s*['"]([^'"]+)['"]/
   );
 
   if (!match) {
-    throw new Error('Identifiant de rubrique introuvable');
+    throw new Error(
+      'Identifiant de rubrique introuvable'
+    );
   }
 
   const submenuId = match[1];
 
   console.log(`Selection : ${submenuId}`);
 
-  const sectionVisible = async () => {
-    return page.evaluate(expected => {
-      return [
-        ...document.querySelectorAll(
-          '.content-area .content-section'
-        )
-      ].some(section =>
+  const sectionVisible = () =>
+    page.evaluate(expected =>
+      [...document.querySelectorAll(
+        '.content-area .content-section'
+      )].some(section =>
         (section.getAttribute('ng-if') || '')
           .includes(expected) &&
         section.getBoundingClientRect().height > 0
-      );
-    }, submenuId);
-  };
+      ),
+      submenuId
+    );
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (await sectionVisible()) {
-      console.log(`Section affichee : ${submenuId}`);
+      console.log(
+        `Section affichee : ${submenuId}`
+      );
       return;
     }
 
-    console.log(`Tentative ${attempt}/3 : ${submenuId}`);
+    console.log(
+      `Tentative ${attempt}/3 : ${submenuId}`
+    );
 
     const isOpen = await button.evaluate(el =>
-      el.classList.contains('cl-dropdown-button-open')
+      el.classList.contains(
+        'cl-dropdown-button-open'
+      )
     );
 
     if (!isOpen) {
@@ -147,30 +220,39 @@ async function selectSection(page, groupIndex, itemIndex) {
 
       return group?.querySelector(
         '.cl-dropdown-menu'
-      )?.classList.contains('cl-dropdown-visible');
-    }, groupIndex, { timeout: 10000 });
+      )?.classList.contains(
+        'cl-dropdown-visible'
+      );
+    }, groupIndex, {
+      timeout: 10000
+    });
 
-    await item.click({ timeout: 15000 });
+    await item.click({
+      timeout: 15000
+    });
 
     try {
-      await page.waitForFunction(expected => {
-        return [
-          ...document.querySelectorAll(
-            '.content-area .content-section'
-          )
-        ].some(section =>
+      await page.waitForFunction(expected =>
+        [...document.querySelectorAll(
+          '.content-area .content-section'
+        )].some(section =>
           (section.getAttribute('ng-if') || '')
             .includes(expected) &&
           section.getBoundingClientRect().height > 0
-        );
-      }, submenuId, { timeout: 8000 });
+        ),
+        submenuId,
+        { timeout: 8000 }
+      );
 
-      console.log(`Section affichee : ${submenuId}`);
+      console.log(
+        `Section affichee : ${submenuId}`
+      );
+
       return;
 
-    } catch (error) {
+    } catch {
       console.warn(
-        `Selection non confirmee : tentative ${attempt}`
+        `Selection non confirmee : ${attempt}`
       );
 
       await page.waitForTimeout(1000);
@@ -178,12 +260,12 @@ async function selectSection(page, groupIndex, itemIndex) {
   }
 
   throw new Error(
-    `Impossible d'afficher ${submenuId} apres 3 tentatives`
+    `Impossible d'afficher ${submenuId}`
   );
 }
 
 // =====================================================
-// 4. CHARGEMENT DES VISUALISATIONS
+// 3. CHARGEMENT DES VISUALISATIONS
 // =====================================================
 
 async function waitForVisuals(page) {
@@ -225,18 +307,20 @@ async function waitForVisuals(page) {
   await page.evaluate(async () => {
     await Promise.all(
       [...document.images].map(img => {
-        if (img.complete) return Promise.resolve();
+        if (img.complete) {
+          return Promise.resolve();
+        }
 
         return new Promise(resolve => {
           const finish = () => resolve();
 
-          img.addEventListener('load', finish, {
-            once: true
-          });
+          img.addEventListener(
+            'load', finish, { once: true }
+          );
 
-          img.addEventListener('error', finish, {
-            once: true
-          });
+          img.addEventListener(
+            'error', finish, { once: true }
+          );
 
           setTimeout(finish, 8000);
         });
@@ -250,9 +334,13 @@ async function waitForVisuals(page) {
     );
 
     return [...charts].every(chart =>
-      chart.querySelector('.highcharts-container')
+      chart.querySelector(
+        '.highcharts-container'
+      )
     );
-  }, null, { timeout: 15000 }).catch(() => {
+  }, null, {
+    timeout: 15000
+  }).catch(() => {
     console.warn(
       'Certains graphiques ne sont pas confirmes'
     );
@@ -264,15 +352,22 @@ async function waitForVisuals(page) {
 }
 
 // =====================================================
-// 5. GENERATION PDF - VERSION 5E
+// 4. GENERATION D'UNE SOUS-THEMATIQUE
 // =====================================================
 
-async function printSection(page, file) {
+async function printSection(
+  page,
+  file,
+  theme,
+  firstOfTheme
+) {
   const section = page.locator(
     '.content-area .content-section:visible'
   ).first();
 
-  await section.waitFor({ state: 'visible' });
+  await section.waitFor({
+    state: 'visible'
+  });
 
   const title = await section.locator(
     '.section-title'
@@ -282,29 +377,7 @@ async function printSection(page, file) {
     '.kpi-description'
   ).first().innerText().catch(() => '');
 
-  const themeClass =
-    await section.getAttribute('class') || '';
-
-  let themeColor = '#015ca2';
-
-  if (themeClass.includes('theme-demographie')) {
-    themeColor = '#e79995';
-  }
-
-  if (themeClass.includes('theme-emploi')) {
-    themeColor = '#0d47b3';
-  }
-
-  if (themeClass.includes('theme-logement')) {
-    themeColor = '#3a8ba9';
-  }
-
-  if (themeClass.includes('theme-entreprises')) {
-    themeColor = '#8a6ea9';
-  }
-
-  // Gabarits specifiques aux deux rubriques
-  // qui debordaient dans la version 5D.
+  const themeColor = theme?.color || '#015CA2';
 
   const isSenior =
     /population s[eé]nior/i.test(title);
@@ -314,8 +387,12 @@ async function printSection(page, file) {
 
   const isCompact = isSenior || isActive;
 
+  const specialEnterprise =
+    /formes juridiques|familles d.activit/i
+      .test(title);
+
   // -------------------------------------------------
-  // 5A. EXTRACTION DES BLOCS
+  // EXTRACTION DES BLOCS
   // -------------------------------------------------
 
   const blocks = section.locator(
@@ -323,7 +400,6 @@ async function printSection(page, file) {
   );
 
   const elements = [];
-
   const count = await blocks.count();
 
   for (let i = 0; i < count; i++) {
@@ -344,9 +420,6 @@ async function printSection(page, file) {
     const isCards = await block.evaluate(el =>
       el.classList.contains('cards-grid')
     );
-
-    const specialEnterprise =
-      /formes juridiques|familles d.activit/i.test(title);
 
     if (isCards && !specialEnterprise) {
       const cards = await block.locator(
@@ -400,34 +473,27 @@ async function printSection(page, file) {
   );
 
   // -------------------------------------------------
-  // 5B. CONSTRUCTION DU HTML
+  // CONSTRUCTION DES CONTENUS
   // -------------------------------------------------
 
   const renderCards = element => `
     <div class="pdf-cards">
-      ${element.cards.map(card => {
-        const isLong = card.textLength > 240;
-
-        return `
-          <div class="pdf-card ${isLong ? 'pdf-card-long' : ''}">
-            ${card.html}
-          </div>
-        `;
-      }).join('')}
+      ${element.cards.map(card => `
+        <div class="pdf-card ${
+          card.textLength > 240
+            ? 'pdf-card-long'
+            : ''
+        }">
+          ${card.html}
+        </div>
+      `).join('')}
     </div>
   `;
 
-  const renderInformation = element => {
-    if (element.type === 'cards') {
-      return renderCards(element);
-    }
-
-    return `
-      <div class="pdf-text">
-        ${element.html}
-      </div>
-    `;
-  };
+  const renderInfo = element =>
+    element.type === 'cards'
+      ? renderCards(element)
+      : `<div class="pdf-text">${element.html}</div>`;
 
   const renderVisual = element => `
     <figure class="pdf-visual">
@@ -438,127 +504,145 @@ async function printSection(page, file) {
     </figure>
   `;
 
-  const information = elements.filter(
-    el => el.type === 'cards' || el.type === 'text'
+  const information = elements.filter(el =>
+    el.type === 'cards' || el.type === 'text'
   );
 
-  const visuals = elements.filter(
-    el => el.type === 'visual'
+  const visuals = elements.filter(el =>
+    el.type === 'visual'
   );
 
   const infoHTML = information
-    .map(renderInformation)
+    .map(renderInfo)
     .join('');
 
-  const complexVisual = visuals.some(
-    el => el.ratio < 1.15 || el.height > 750
+  // Les visualisations sont conservees
+  // dans leur ordre d'origine.
+  //
+  // Un visuel detaille utilise toute la largeur.
+  // Les deux colonnes sont reservees aux
+  // contenus plus simples.
+
+  const complexVisual = visuals.some(el =>
+    el.ratio < 1.15 ||
+    el.height > 750
   );
 
   let content = '';
 
-  // -------------------------------------------------
-  // 5C. GABARIT SPECIAL POPULATION SENIOR
-  // ET POPULATION ACTIVE / INACTIVE
-  // -------------------------------------------------
-
-  if (isCompact && information.length && visuals.length) {
-    content = `
-      <div class="pdf-layout-compact">
-
-        <div class="pdf-compact-info">
-          ${infoHTML}
-        </div>
-
-        <div class="pdf-compact-visuals">
-          ${visuals.map(renderVisual).join('')}
-        </div>
-
-      </div>
-    `;
-
-    console.log(
-      `Gabarit compact active : ${title}`
-    );
-
-  // Gabarit A : deux visualisations
-  } else if (
-    information.length &&
-    visuals.length === 2 &&
-    !complexVisual
-  ) {
-    content = `
-      <div class="pdf-layout-a">
-        <div class="pdf-layout-a-info">
-          ${infoHTML}
-        </div>
-        <div class="pdf-layout-a-visuals">
-          ${visuals.map(renderVisual).join('')}
-        </div>
-      </div>
-    `;
-
-  // Gabarit B : une visualisation
-  } else if (
+  if (
     information.length &&
     visuals.length === 1 &&
     !complexVisual
   ) {
     content = `
-      <div class="pdf-layout-b">
-        <div class="pdf-layout-b-info">
+      <div class="pdf-layout-side">
+        <div class="pdf-side-info">
           ${infoHTML}
         </div>
-        <div class="pdf-layout-b-visual">
+        <div class="pdf-side-visual">
           ${renderVisual(visuals[0])}
         </div>
       </div>
     `;
 
-  // Gabarit C : pleine largeur
+  } else if (
+    information.length &&
+    visuals.length === 2 &&
+    !complexVisual &&
+    !isCompact
+  ) {
+    // Informations et premier visuel en haut.
+    // Deuxieme visuel sur toute la largeur.
+    content = `
+      <div class="pdf-layout-top">
+        <div class="pdf-top-info">
+          ${infoHTML}
+        </div>
+        <div class="pdf-top-visual">
+          ${renderVisual(visuals[0])}
+        </div>
+      </div>
+
+      <div class="pdf-visual-wide">
+        ${renderVisual(visuals[1])}
+      </div>
+    `;
+
+  } else if (
+    isCompact &&
+    information.length &&
+    visuals.length
+  ) {
+    // Conserver la compacite des rubriques
+    // Population senior et Active / inactive.
+    content = `
+      <div class="pdf-layout-compact">
+        <div class="pdf-compact-info">
+          ${infoHTML}
+        </div>
+        <div class="pdf-compact-visuals">
+          ${visuals.map(renderVisual).join('')}
+        </div>
+      </div>
+    `;
+
   } else {
-    const visualParts = [];
-
-    for (let i = 0; i < visuals.length; i++) {
-      const current = visuals[i];
-      const next = visuals[i + 1];
-
-      const canPair =
-        next &&
-        current.ratio >= 1.7 &&
-        next.ratio >= 1.7 &&
-        current.height < 550 &&
-        next.height < 550;
-
-      if (canPair) {
-        visualParts.push(`
-          <div class="pdf-visual-pair">
-            ${renderVisual(current)}
-            ${renderVisual(next)}
-          </div>
-        `);
-
-        i++;
-      } else {
-        visualParts.push(`
-          <div class="pdf-visual-full">
-            ${renderVisual(current)}
-          </div>
-        `);
-      }
-    }
-
+    // Graphiques complexes : pleine largeur.
     content = `
       <div class="pdf-info-full">
         ${infoHTML}
       </div>
+
       <div class="pdf-visuals-full">
-        ${visualParts.join('')}
+        ${visuals.map(element => `
+          <div class="pdf-visual-wide">
+            ${renderVisual(element)}
+          </div>
+        `).join('')}
       </div>
     `;
   }
 
   // -------------------------------------------------
-  // 5D. STYLES DU DOCUMENT
+  // EN-TETE THEMATIQUE
+  // -------------------------------------------------
+
+  const illustration = theme
+    ? illustrations.get(theme.key)
+    : null;
+
+  const themeHeader =
+    firstOfTheme && theme && illustration
+      ? `
+        <div class="pdf-theme-banner">
+          <div class="pdf-theme-label">
+            <div class="pdf-theme-small">
+              PANORAMA TERRITORIAL
+            </div>
+            <div class="pdf-theme-name">
+              ${escapeHTML(theme.name)}
+            </div>
+          </div>
+
+          <img
+            src="${illustration}"
+            alt=""
+            class="pdf-theme-image"
+          >
+        </div>
+      `
+      : `
+        <div class="pdf-small-header">
+          <span>PANORAMA TERRITORIAL</span>
+          <span>${escapeHTML(
+            theme?.name || ''
+          )}</span>
+        </div>
+      `;
+
+  // -------------------------------------------------
+  // HTML ET CSS
   // -------------------------------------------------
 
   const html = `
@@ -586,38 +670,82 @@ async function printSection(page, file) {
 
       body {
         font-family: Raleway, Arial, sans-serif;
-        color: #041447;
+        color: ${NAVY};
         background: white;
         font-size: 9.5pt;
         line-height: 1.35;
       }
 
-      .pdf-heading {
-        border-bottom: 2px solid #F24E4C;
-        margin-bottom: 4mm;
-        padding-bottom: 3mm;
+      /* EN-TETE THEMATIQUE */
+
+      .pdf-theme-banner {
+        position: relative;
+        height: 28mm;
+        background: ${NAVY};
+        color: white;
+        overflow: hidden;
+        margin-bottom: 5mm;
         break-after: avoid;
       }
 
-      .pdf-brand {
+      .pdf-theme-label {
+        position: absolute;
+        top: 5mm;
+        left: 7mm;
+        z-index: 2;
+      }
+
+      .pdf-theme-small {
+        font-size: 7.5pt;
+        color: #B8D4F3;
+        letter-spacing: 1px;
+        margin-bottom: 3mm;
+      }
+
+      .pdf-theme-name {
+        font-size: 20pt;
+        font-weight: 800;
+        line-height: 1.1;
+      }
+
+      .pdf-theme-image {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 43%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+      }
+
+      .pdf-small-header {
+        display: flex;
+        justify-content: space-between;
+        color: ${NAVY};
         font-size: 8pt;
         font-weight: 700;
-        color: #041447;
         letter-spacing: .5px;
-        margin-bottom: 2mm;
+        margin-bottom: 4mm;
+      }
+
+      .pdf-heading {
+        border-bottom: 2px solid ${RED};
+        margin-bottom: 4mm;
+        padding-bottom: 2mm;
+        break-after: avoid;
       }
 
       h1 {
+        color: ${NAVY};
         font-size: 18pt;
-        color: #041447;
-        line-height: 1.15;
         margin: 0 0 2mm;
+        line-height: 1.15;
       }
 
       .pdf-source {
+        color: #64748B;
         font-size: 8pt;
         font-style: italic;
-        color: #64748b;
       }
 
       /* INDICATEURS */
@@ -645,7 +773,7 @@ async function printSection(page, file) {
       }
 
       .pdf-card .card__title {
-        color: #64748b;
+        color: #64748B;
         font-size: 9pt;
         margin: 0 0 1mm;
       }
@@ -658,7 +786,7 @@ async function printSection(page, file) {
       }
 
       .pdf-card .description {
-        color: #64748b;
+        color: #64748B;
         font-size: 8.5pt;
       }
 
@@ -675,12 +803,12 @@ async function printSection(page, file) {
       }
 
       .pdf-text {
-        margin: 0 0 3mm;
+        margin-bottom: 3mm;
         font-size: 9pt;
         line-height: 1.35;
       }
 
-      /* VISUALISATIONS */
+      /* VISUALISATIONS HD */
 
       .pdf-visual {
         margin: 0;
@@ -693,56 +821,106 @@ async function printSection(page, file) {
         display: block;
         width: 100%;
         height: auto;
-        max-height: 160mm;
+        max-height: 165mm;
         object-fit: contain;
         object-position: top center;
       }
 
-      /* GABARIT A */
+      /* GABARIT : INDICATEURS + VISUEL */
 
-      .pdf-layout-a {
+      .pdf-layout-side {
         display: grid;
         grid-template-columns:
-          45% minmax(0, 1fr);
-        gap: 4mm;
+          38% minmax(0, 1fr);
+        gap: 5mm;
         align-items: start;
       }
 
-      .pdf-layout-a-info {
+      .pdf-side-info,
+      .pdf-side-visual {
         min-width: 0;
       }
 
-      .pdf-layout-a-visuals {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 3mm;
-        min-width: 0;
-      }
-
-      .pdf-layout-a-visuals img {
-        max-height: 75mm;
-      }
-
-      /* GABARIT B */
-
-      .pdf-layout-b {
-        display: grid;
-        grid-template-columns:
-          42% minmax(0, 1fr);
-        gap: 4mm;
-        align-items: start;
-      }
-
-      .pdf-layout-b-info,
-      .pdf-layout-b-visual {
-        min-width: 0;
-      }
-
-      .pdf-layout-b-visual img {
+      .pdf-side-visual img {
         max-height: 155mm;
       }
 
-      /* GABARIT C */
+      /* GABARIT : PARTIE HAUTE */
+
+      .pdf-layout-top {
+        display: grid;
+        grid-template-columns:
+          40% minmax(0, 1fr);
+        gap: 5mm;
+        align-items: start;
+        margin-bottom: 4mm;
+      }
+
+      .pdf-top-info,
+      .pdf-top-visual {
+        min-width: 0;
+      }
+
+      .pdf-top-visual img {
+        max-height: 100mm;
+      }
+
+      /* GRAPHIQUE PLEINE LARGEUR */
+
+      .pdf-visual-wide {
+        width: 100%;
+        margin: 3mm 0 5mm;
+        break-inside: avoid;
+      }
+
+      .pdf-visual-wide img {
+        width: 100%;
+        max-height: 155mm;
+      }
+
+      /* GABARIT COMPACT */
+
+      .pdf-layout-compact {
+        display: grid;
+        grid-template-columns:
+          46% minmax(0, 1fr);
+        gap: 4mm;
+        align-items: start;
+      }
+
+      .pdf-compact-info,
+      .pdf-compact-visuals {
+        min-width: 0;
+      }
+
+      .pdf-compact-info .pdf-cards {
+        gap: 2mm;
+        margin-bottom: 2mm;
+      }
+
+      .pdf-compact-info .pdf-card {
+        padding: 2mm;
+      }
+
+      .pdf-compact-info .kpi-title {
+        font-size: 17pt;
+      }
+
+      .pdf-compact-info .card_textpano {
+        font-size: 8.5pt;
+      }
+
+      .pdf-compact-visuals {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 3mm;
+      }
+
+      .pdf-compact-visuals img {
+        max-height: 83mm;
+      }
+
+      /* GABARIT PLEINE LARGEUR */
 
       .pdf-info-full {
         width: 100%;
@@ -755,102 +933,29 @@ async function printSection(page, file) {
       }
 
       .pdf-info-full .pdf-card-long {
-        grid-column: span 3;
-      }
-
-      .pdf-visual-full {
-        width: 100%;
-        margin-bottom: 4mm;
-        break-inside: avoid;
-      }
-
-      .pdf-visual-pair {
-        display: grid;
-        grid-template-columns:
-          repeat(2, minmax(0, 1fr));
-        gap: 4mm;
-        margin-bottom: 4mm;
-        break-inside: avoid;
-      }
-
-      .pdf-visual-pair img {
-        max-height: 135mm;
-      }
-
-      /* VERSION 5E : GABARIT COMPACT */
-
-      .pdf-layout-compact {
-        display: grid;
-        grid-template-columns:
-          48% minmax(0, 1fr);
-        gap: 4mm;
-        align-items: start;
-      }
-
-      .pdf-compact-info {
-        min-width: 0;
-      }
-
-      .pdf-compact-info .pdf-cards {
-        grid-template-columns:
-          repeat(2, minmax(0, 1fr));
-        gap: 2mm;
-        margin-bottom: 2mm;
-      }
-
-      .pdf-compact-info .pdf-card {
-        padding: 2mm;
-      }
-
-      .pdf-compact-info .pdf-card-long {
         grid-column: 1 / -1;
-      }
-
-      .pdf-compact-info .pdf-card .kpi-title {
-        font-size: 17pt;
-      }
-
-      .pdf-compact-info .pdf-card .card_textpano {
-        font-size: 8.5pt;
-        line-height: 1.3;
-      }
-
-      .pdf-compact-info .pdf-card p {
-        margin: 0.5mm 0;
-      }
-
-      .pdf-compact-visuals {
-        min-width: 0;
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 3mm;
-      }
-
-      .pdf-compact-visuals img {
-        max-height: 78mm;
       }
 
       /* PAGINATION */
 
       .pdf-card,
       .pdf-visual,
-      .pdf-visual-full {
-        break-inside: avoid;
+      .pdf-theme-banner {
         page-break-inside: avoid;
+        break-inside: avoid;
       }
 
       img {
         max-width: 100%;
       }
+
     </style>
   </head>
 
   <body>
-    <div class="pdf-heading">
-      <div class="pdf-brand">
-        AGGLOMÉRATION MELUN VAL DE SEINE
-      </div>
+    ${themeHeader}
 
+    <div class="pdf-heading">
       <h1>${escapeHTML(title)}</h1>
 
       <div class="pdf-source">
@@ -864,17 +969,20 @@ async function printSection(page, file) {
   `;
 
   // -------------------------------------------------
-  // 5E. IMPRESSION ET CONTROLE
+  // IMPRESSION PDF
   // -------------------------------------------------
 
   const pdfContext = await browser.newContext({
-    viewport: { width: 1600, height: 1000 },
+    viewport: {
+      width: 1600,
+      height: 1000
+    },
     deviceScaleFactor: 1
   });
 
-  const pdfPage = await pdfContext.newPage();
-
   try {
+    const pdfPage = await pdfContext.newPage();
+
     await pdfPage.setContent(html, {
       waitUntil: 'load'
     });
@@ -884,7 +992,7 @@ async function printSection(page, file) {
 
       await Promise.all(
         [...document.images].map(img =>
-          img.decode().catch(() => {})
+          img.decode()
         )
       );
     });
@@ -897,19 +1005,16 @@ async function printSection(page, file) {
       preferCSSPageSize: true
     });
 
-    // Controle du nombre de pages.
-
-    const pdfBytes = await fs.readFile(file);
-    const pdfDocument = await PDFDocument.load(pdfBytes);
-    const pageCount = pdfDocument.getPageCount();
+    const bytes = await fs.readFile(file);
+    const pdf = await PDFDocument.load(bytes);
 
     console.log(
-      `PDF ${path.basename(file)} : ${pageCount} page(s)`
+      `${title} : ${pdf.getPageCount()} page(s)`
     );
 
-    if (pageCount > 1) {
+    if (pdf.getPageCount() > 1) {
       console.warn(
-        `Pagination a verifier : ${title} (${pageCount} pages)`
+        `Pagination a verifier : ${title}`
       );
     }
 
@@ -921,7 +1026,7 @@ async function printSection(page, file) {
 }
 
 // =====================================================
-// 6. GENERATION DES RUBRIQUES
+// 5. DECOUVERTE ET GENERATION
 // =====================================================
 
 try {
@@ -935,10 +1040,13 @@ try {
 
       title: node.querySelector(
         '.cl-dropdown-button'
-      )?.textContent?.trim() || `Theme ${index + 1}`,
+      )?.textContent?.trim() ||
+        `Theme ${index + 1}`,
 
       items: [
-        ...node.querySelectorAll('.cl-dropdown-item')
+        ...node.querySelectorAll(
+          '.cl-dropdown-item'
+        )
       ].map((item, itemIndex) => ({
         itemIndex,
         title: item.textContent.trim()
@@ -956,7 +1064,8 @@ try {
   console.log(
     `Detected ${
       groups.reduce(
-        (sum, group) => sum + group.items.length,
+        (sum, group) =>
+          sum + group.items.length,
         0
       )
     } sections`
@@ -965,18 +1074,30 @@ try {
   let n = 0;
 
   for (const group of groups) {
+    const theme = getTheme(group.title);
+
     for (const item of group.items) {
       n++;
 
       const name =
         `${String(n).padStart(2, '0')}-` +
-        `${slug(group.title)}-${slug(item.title)}`;
+        `${slug(group.title)}-` +
+        `${slug(item.title)}`;
+
+      const file = path.join(
+        OUT,
+        `${name}.pdf`
+      );
+
+      const firstOfTheme =
+        item.itemIndex === 0;
 
       let page;
 
       try {
         console.log(
-          `Starting ${n}: ${group.title} / ${item.title}`
+          `Starting ${n}: ` +
+          `${group.title} / ${item.title}`
         );
 
         page = await preparePage();
@@ -990,13 +1111,18 @@ try {
         await waitForVisuals(page);
 
         await page.screenshot({
-          path: path.join(OUT, `${name}-screen.png`),
+          path: path.join(
+            OUT,
+            `${name}-screen.png`
+          ),
           fullPage: false
         });
 
         await printSection(
           page,
-          path.join(OUT, `${name}.pdf`)
+          file,
+          theme,
+          firstOfTheme
         );
 
         report.push({
@@ -1007,7 +1133,9 @@ try {
           file: `${name}.pdf`
         });
 
-        console.log(`PDF created: ${name}.pdf`);
+        console.log(
+          `PDF created: ${name}.pdf`
+        );
 
       } catch (error) {
         console.error(
@@ -1024,7 +1152,10 @@ try {
 
         if (page) {
           await page.screenshot({
-            path: path.join(OUT, `${name}-error.png`),
+            path: path.join(
+              OUT,
+              `${name}-error.png`
+            ),
             fullPage: false
           }).catch(() => {});
         }
@@ -1047,7 +1178,7 @@ try {
 }
 
 // =====================================================
-// 7. BILAN
+// 6. BILAN
 // =====================================================
 
 const successCount = report.filter(
@@ -1058,6 +1189,8 @@ console.log(
   `Finished: ${successCount}/${report.length} PDFs`
 );
 
-if (report.some(item => item.status === 'error')) {
+if (report.some(
+  item => item.status === 'error'
+)) {
   process.exitCode = 1;
 }
