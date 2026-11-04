@@ -22,13 +22,38 @@ page.setDefaultTimeout(30000);
 
 try {
   // 1. Ouvrir le panorama
-  await page.goto(URL, {
-    waitUntil: 'domcontentloaded',
-    timeout: 90000
+
+await page.goto(URL, {
+  waitUntil: 'domcontentloaded',
+  timeout: 90000
+});
+
+// Attendre le chargement du panorama
+await page.locator('.sidebar-nav .cl-dropdown')
+  .first().waitFor();
+
+// Gérer la fenêtre de consentement aux cookies
+const cookieModal = page.locator(
+  'ods-manage-cookies-preferences-modal'
+);
+
+if (await cookieModal.isVisible().catch(() => false)) {
+
+  console.log('Fenêtre cookies détectée');
+
+  // Essayer de refuser les cookies facultatifs
+  const refuseButton = page.getByRole('button', {
+    name: /tout refuser|refuser tout|reject all|refuse all/i
   });
 
-  await page.locator('.sidebar-nav .cl-dropdown')
-    .first().waitFor();
+  if (await refuseButton.isVisible().catch(() => false)) {
+    await refuseButton.click();
+    console.log('Cookies facultatifs refusés');
+  }
+}
+
+// Vérifier que la fenêtre ne bloque plus la page
+await page.waitForTimeout(1000);
 
   // 2. Découvrir automatiquement les rubriques
   const groups = await page
