@@ -3,67 +3,36 @@ import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const URL =
-  'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
-
+const URL = 'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
 const OUT = 'output';
+const TIMEOUT = 60000;
 
 await fs.mkdir(OUT, { recursive: true });
 
-const browser = await chromium.launch({
-  headless: true
-});
+const browser = await chromium.launch({ headless: true });
+const report = [];
 
-const page = await browser.newPage({
-  viewport: { width: 1440, height: 1000 }
-});
-
-page.setDefaultTimeout(30000);
-
-try {
-  // 1. Ouvrir le panorama
-
-await page.goto(URL, {
-  waitUntil: 'domcontentloaded',
-  timeout: 90000
-});
-
-// Attendre le chargement du panorama
-await page.locator('.sidebar-nav .cl-dropdown')
-  .first().waitFor();
-
-// Gérer la fenêtre de consentement aux cookies
-const cookieModal = page.locator(
-  'ods-manage-cookies-preferences-modal'
-);
-
-if (await cookieModal.isVisible().catch(() => false)) {
-
-  console.log('Fenêtre cookies détectée');
-
-  // Essayer de refuser les cookies facultatifs
-  const refuseButton = page.getByRole('button', {
-    name: /tout refuser|refuser tout|reject all|refuse all/i
+async function preparePage() {
+  const page = await browser.newPage({
+    viewport: { width: 1600, height: 1000 },
+    deviceScaleFactor: 1
   });
 
-  if (await refuseButton.isVisible().catch(() => false)) {
-    await refuseButton.click();
-    console.log('Cookies facultatifs refusés');
-  }
-}
+  page.setDefaultTimeout(TIMEOUT);
 
-// Vérifier que la fenêtre ne bloque plus la page
-await page.waitForTimeout(1000);
+  await page.goto(URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 90000
+  });
 
+  await page.locator('.sidebar-nav .cl-dropdown')
+    .first().waitFor({ state: 'attached' });
 
-  // Neutraliser les fenêtres de cookies qui bloquent
-  // les interactions du navigateur automatisé.
-
+  // Masquer la fenetre cookies uniquement dans le robot
   await page.addStyleTag({
     content: `
       ods-manage-cookies-preferences-modal,
       .ods-manage-cookies-preferences,
-      .ods-manage-cookies-preferences-modal,
       .modal-backdrop {
         display: none !important;
         pointer-events: none !important;
@@ -71,124 +40,302 @@ await page.waitForTimeout(1000);
     `
   });
 
-  console.log(
-    'Fenêtre de cookies neutralisée pour le robot'
+  return page;
+}
+
+function slug(value) {
+  return value.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 55);
+}
+
+async function selectSection(page, groupIndex, itemIndex) {
+  const group = page.locator('.sidebar-nav .cl-dropdown')
+    .nth(groupIndex);
+
+  const button = group.locator('.cl-dropdown-button');
+
+  const isOpen = await button.evaluate(el =>
+    el.classList.contains('cl-dropdown-button-open')
   );
 
+  if (!isOpen) {
+    await button.click({ force: true });
+  }
 
-  // 2. Découvrir automatiquement les rubriques
-  const groups = await page
-    .locator('.sidebar-nav .cl-dropdown')
-    .evaluateAll(nodes => nodes.map((node, index) => ({
-      index,
-      title: node.querySelector('.cl-dropdown-button')
-        ?.textContent?.trim() || `Thème ${index + 1}`,
-      items: [...node.querySelectorAll('.cl-dropdown-item')]
-        .map((item, itemIndex) => ({
-          itemIndex,
-          title: item.textContent.trim()
-        }))
-    })));
+  const item = group.locator('.cl-dropdown-item')
+    .nth(itemIndex);
 
-  console.log('Rubriques détectées :', groups);
+  await item.click({ force: true });
+
+  // Verifier que la bonne rubrique est selectionnee
+  await page.waitForFunction(({ groupIndex, itemIndex }) => {
+    const group = document.querySelectorAll(
+      '.sidebar-nav .cl-dropdown'
+    )[groupIndex];
+
+    const item = group?.querySelectorAll(
+      '.cl-dropdown-item'
+    )[itemIndex];
+
+    return !!item?.classList.contains('active');
+  }, { groupIndex, itemIndex }, { timeout: 20000 });
+
+  await page.locator('.content-area .content-section')
+    .first().waitFor({ state: 'visible' });
+}
+
+async function waitForVisuals(page) {
+  // Attendre les indicateurs calcules par HUWISE
+  await page.waitForFunction(() => {
+    const section = [
+      ...document.querySelectorAll(
+        '.content-area .content-section'
+      )
+    ].find(el => el.getBoundingClientRect().height > 0);
+
+    if (!section) return false;
+
+    const kpis = [...section.querySelectorAll('.kpi-title')];
+
+    return kpis.every(el => {
+      const value = (el.textContent || '').trim();
+
+      return value &&
+        value !== '%' &&
+        value !== '-' &&
+        value !== 'NaN';
+    });
+  }, null, { timeout: 25000 }).catch(() => {
+    console.warn(
+      'Chargement des indicateurs non confirme'
+    );
+  });
+
+  // Laisser les graphiques et cartes terminer
+  await page.waitForTimeout(5000);
+
+  await page.evaluate(async () => {
+    await Promise.all(
+      [...document.images].map(img =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise(resolve => {
+              img.addEventListener('load', resolve, {
+                once: true
+              });
+              img.addEventListener('error', resolve, {
+                once: true
+              });
+              setTimeout(resolve, 8000);
+            })
+      )
+    );
+  });
+}
+
+async function printSection(page, file) {
+  // Styles appliques seulement au PDF
+  await page.addStyleTag({
+    content: `
+      @media print {
+        @page {
+          size: A4 landscape;
+          margin: 12mm;
+        }
+
+        .ods-front-header,
+        .ods-front-footer,
+        .ods-front-header__menu,
+        header[role="banner"],
+        footer,
+        .navbar,
+        .sidebar-nav,
+        .sticky-content,
+        .scroll-indicator,
+        .panorama-export-pdf,
+        .header,
+        .home {
+          display: none !important;
+        }
+
+        .conteneur,
+        .indicateurs,
+        .main-content-wrapper,
+        .content-area {
+          display: block !important;
+          width: 100% !important;
+          max-width: none !important;
+          height: auto !important;
+          min-height: 0 !important;
+          overflow: visible !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+
+        .content-section {
+          animation: none !important;
+        }
+
+        .chart-section,
+        .map-section {
+          break-inside: avoid;
+          box-shadow: none !important;
+        }
+
+        ods-chart,
+        .odswidget-chart,
+        .highcharts-container,
+        svg.highcharts-root {
+          max-width: 100% !important;
+        }
+
+        * {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+      }
+    `
+  });
+
+  await page.pdf({
+    path: file,
+    format: 'A4',
+    landscape: true,
+    printBackground: true,
+    preferCSSPageSize: true
+  });
+}
+
+try {
+  // Decouvrir les thematiques et sous-thematiques
+  const discovery = await preparePage();
+
+  const groups = await discovery.locator(
+    '.sidebar-nav .cl-dropdown'
+  ).evaluateAll(nodes => nodes.map((node, index) => ({
+    index,
+    title: node.querySelector('.cl-dropdown-button')
+      ?.textContent?.trim() || `Theme ${index + 1}`,
+    items: [
+      ...node.querySelectorAll('.cl-dropdown-item')
+    ].map((item, itemIndex) => ({
+      itemIndex,
+      title: item.textContent.trim()
+    }))
+  })));
 
   await fs.writeFile(
     path.join(OUT, 'rubriques.json'),
     JSON.stringify(groups, null, 2)
   );
 
-  // 3. Parcourir les sous-thématiques
-  let counter = 0;
+  await discovery.close();
 
+  console.log(
+    `Detected ${
+      groups.reduce((sum, g) => sum + g.items.length, 0)
+    } sections`
+  );
+
+  let n = 0;
+
+  // Une nouvelle page pour chaque sous-thematique
   for (const group of groups) {
     for (const item of group.items) {
+      n++;
 
-      const menu = page
-        .locator('.sidebar-nav .cl-dropdown')
-        .nth(group.index);
+      const name =
+        `${String(n).padStart(2, '0')}-` +
+        `${slug(group.title)}-${slug(item.title)}`;
 
-      const button = menu.locator('.cl-dropdown-button');
+      let page;
 
-      // Ouvrir le menu seulement s'il est fermé
-      const isOpen = await button.evaluate(el =>
-        el.classList.contains('cl-dropdown-button-open')
-      );
+      try {
+        console.log(
+          `Starting ${n}: ${group.title} / ${item.title}`
+        );
 
-      if (!isOpen) {
-        await button.click();
+        page = await preparePage();
+
+        await selectSection(
+          page,
+          group.index,
+          item.itemIndex
+        );
+
+        await waitForVisuals(page);
+
+        // Capture de diagnostic
+        await page.screenshot({
+          path: path.join(OUT, `${name}-screen.png`),
+          fullPage: false
+        });
+
+        // Generation du PDF
+        await printSection(
+          page,
+          path.join(OUT, `${name}.pdf`)
+        );
+
+        report.push({
+          number: n,
+          theme: group.title,
+          section: item.title,
+          status: 'ok',
+          file: `${name}.pdf`
+        });
+
+        console.log(`PDF created: ${name}.pdf`);
+
+      } catch (error) {
+        console.error(
+          `Failed ${name}: ${error.message}`
+        );
+
+        report.push({
+          number: n,
+          theme: group.title,
+          section: item.title,
+          status: 'error',
+          error: error.message
+        });
+
+        if (page) {
+          await page.screenshot({
+            path: path.join(OUT, `${name}-error.png`),
+            fullPage: false
+          }).catch(() => {});
+        }
+
+      } finally {
+        if (page) {
+          await page.close().catch(() => {});
+        }
       }
-
-      await menu.locator('.cl-dropdown-item')
-        .nth(item.itemIndex).click();
-
-
-      
-      // 4. Attendre la selection de la sous-thematique
-
-      console.log(
-        `Ouverture : ${group.title} / ${item.title}`
-      );
-
-      const selectedItem = menu
-        .locator('.cl-dropdown-item')
-        .nth(item.itemIndex);
-
-      // Attendre que le menu confirme la selection
-      await selectedItem.waitFor({
-        state: 'visible',
-        timeout: 30000
-      });
-
-      await page.waitForFunction(
-        ({ groupIndex, itemIndex }) => {
-          const groups = document.querySelectorAll(
-            '.sidebar-nav .cl-dropdown'
-          );
-
-          const item = groups[groupIndex]
-            ?.querySelectorAll('.cl-dropdown-item')[itemIndex];
-
-          return item?.classList.contains('active');
-        },
-        {
-          groupIndex: group.index,
-          itemIndex: item.itemIndex
-        },
-        { timeout: 30000 }
-      );
-
-      // Attendre qu'une section de contenu soit présente
-      await page.locator(
-        '.content-area .content-section'
-      ).first().waitFor({
-        state: 'attached',
-        timeout: 30000
-      });
-
-      // Laisser les graphiques et cartes se charger
-      await page.waitForTimeout(4000);
-
-      await page.waitForTimeout(2500);
-
-      // 5. Générer le PDF A4 paysage
-      const filename =
-        `${String(++counter).padStart(2, '0')}-` +
-        `${group.index + 1}-${item.itemIndex + 1}.pdf`;
-
-      await page.pdf({
-        path: path.join(OUT, filename),
-        format: 'A4',
-        landscape: true,
-        printBackground: true,
-        preferCSSPageSize: true
-      });
-
-      console.log(`PDF créé : ${filename}`);
     }
   }
 
-  console.log(`${counter} sous-thématiques traitées.`);
-
 } finally {
+  // Sauvegarder le rapport, meme en cas d'erreur
+  await fs.writeFile(
+    path.join(OUT, 'rapport.json'),
+    JSON.stringify(report, null, 2)
+  );
+
   await browser.close();
+}
+
+console.log(
+  `Finished: ${
+    report.filter(x => x.status === 'ok').length
+  }/${report.length} PDFs`
+);
+
+if (report.some(x => x.status === 'error')) {
+  process.exitCode = 1;
 }
