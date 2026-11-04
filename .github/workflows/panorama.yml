@@ -23,13 +23,18 @@ jobs:
           node-version: '22'
 
       - name: Installer les dependances
-        run: npm install
+        run: |
+          npm install
+          npm install pdf-lib
 
       - name: Installer Chromium
         run: npx playwright install --with-deps chromium
 
       - name: Generer les PDF
         run: npm run generate
+
+      - name: Assembler le panorama complet
+        run: node assemble.mjs
 
       - name: Conserver les PDF generes
         if: always()
