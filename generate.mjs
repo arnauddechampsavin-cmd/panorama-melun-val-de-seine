@@ -121,10 +121,37 @@ await page.waitForTimeout(1000);
       await menu.locator('.cl-dropdown-item')
         .nth(item.itemIndex).click();
 
-      // 4. Attendre le contenu de la rubrique
-      await page.locator(
-        '.content-area > .content-section:visible'
-      ).first().waitFor();
+
+      // 4. Attendre le chargement de la sous-thematique
+
+      console.log(
+        `Ouverture : ${group.title} / ${item.title}`
+      );
+
+      // Attendre que le titre de la rubrique apparaisse
+      await page.waitForFunction(
+        (expectedTitle) => {
+          const sections = document.querySelectorAll(
+            '.content-area .content-section'
+          );
+
+          return [...sections].some(section => {
+            const title = section.querySelector(
+              '.section-title'
+            );
+
+            return title &&
+              title.textContent.trim()
+                .toLowerCase() === expectedTitle.toLowerCase();
+          });
+        },
+        item.title,
+        { timeout: 45000 }
+      );
+
+      // Laisser les graphiques et cartes se charger
+      await page.waitForTimeout(4000);
+
 
       await page.waitForTimeout(2500);
 
