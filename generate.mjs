@@ -53,24 +53,40 @@ function slug(value) {
 }
 
 
+
 async function selectSection(page, groupIndex, itemIndex) {
-  const group = page.locator('.sidebar-nav .cl-dropdown')
+
+  const group = page
+    .locator('.sidebar-nav .cl-dropdown')
     .nth(groupIndex);
 
   const button = group.locator('.cl-dropdown-button');
 
+  // Ouvrir le menu si necessaire
   const isOpen = await button.evaluate(el =>
     el.classList.contains('cl-dropdown-button-open')
   );
 
   if (!isOpen) {
-    await button.click({ force: true });
+    await button.click();
   }
 
-  const item = group.locator('.cl-dropdown-item')
+  // Attendre que le menu soit reellement ouvert
+  await page.waitForFunction((index) => {
+    const group = document.querySelectorAll(
+      '.sidebar-nav .cl-dropdown'
+    )[index];
+
+    return group?.querySelector(
+      '.cl-dropdown-menu'
+    )?.classList.contains('cl-dropdown-visible');
+  }, groupIndex, { timeout: 10000 });
+
+  const item = group
+    .locator('.cl-dropdown-item')
     .nth(itemIndex);
 
-  // Recuperer l'identifiant de la sous-thematique
+  // Recuperer l'identifiant AngularJS
   const ngClick = await item.getAttribute('ng-click');
 
   const match = ngClick?.match(
@@ -78,89 +94,30 @@ async function selectSection(page, groupIndex, itemIndex) {
   );
 
   if (!match) {
-    throw new Error(
-      `Identifiant introuvable pour ${groupIndex}/${itemIndex}`
-    );
+    throw new Error('Identifiant de rubrique introuvable');
   }
 
   const submenuId = match[1];
 
-  console.log(`Sous-thematique attendue : ${submenuId}`);
+  console.log(`Selection : ${submenuId}`);
 
-  
-  // Cliquer sur la sous-thematique
-  await item.click({ force: true });
+  // Cliquer normalement, sans force:true
+  await item.click({ timeout: 15000 });
 
-  // DIAGNOSTIC : verifier ce qui a reellement change
-  await page.waitForTimeout(1500);
-
-  const diagnostic = await page.evaluate(() => {
-    const menu = document.querySelector('.sidebar-nav');
-
-    const activeItems = [
-      ...document.querySelectorAll(
-        '.sidebar-nav .cl-dropdown-item.active'
-      )
-    ].map(el => ({
-      text: el.textContent.trim(),
-      click: el.getAttribute('ng-click')
-    }));
-
-    const sections = [
-      ...document.querySelectorAll(
-        '.content-area .content-section'
-      )
-    ].map(el => ({
-      condition: el.getAttribute('ng-if'),
-      title: el.querySelector('.section-title')
-        ?.textContent.trim(),
-      visible: el.getBoundingClientRect().height > 0
-    }));
-
-    let angularValue = null;
-
-    try {
-      if (window.angular && menu) {
-        const scope = window.angular.element(menu).scope();
-        angularValue = scope?.activeSubmenu ?? null;
-      }
-    } catch (e) {
-      angularValue = 'scope inaccessible';
-    }
-
-    return {
-      angularValue,
-      activeItems,
-      sections
-    };
-  });
-
-  console.log(
-    'DIAGNOSTIC ' + submenuId + ': ' +
-    JSON.stringify(diagnostic, null, 2)
-  );
-
-
-  // Attendre que le contenu correspondant apparaisse
-  await page.waitForFunction(
-    (expected) => {
-      const sections = document.querySelectorAll(
-        '.content-area .content-section'
-      );
-
-      return [...sections].some(section => {
-        const condition = section.getAttribute('ng-if') || '';
-
-        return condition.includes(expected) &&
-          section.getBoundingClientRect().height > 0;
-      });
-    },
-    submenuId,
-    { timeout: 30000 }
-  );
+  // Attendre le contenu reellement affiche
+  await page.waitForFunction((expected) => {
+    return [...document.querySelectorAll(
+      '.content-area .content-section'
+    )].some(section =>
+      (section.getAttribute('ng-if') || '')
+        .includes(expected) &&
+      section.getBoundingClientRect().height > 0
+    );
+  }, submenuId, { timeout: 15000 });
 
   console.log(`Section affichee : ${submenuId}`);
 }
+
 
 
 async function waitForVisuals(page) {
