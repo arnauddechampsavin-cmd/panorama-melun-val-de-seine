@@ -29,9 +29,10 @@ const report = [];
 
 async function preparePage() {
   const page = await browser.newPage({
-    viewport: { width: 1600, height: 1000 },
-    deviceScaleFactor: 1
-  });
+  viewport: { width: 1600, height: 1000 },
+  deviceScaleFactor: 3
+});
+
 
   page.setDefaultTimeout(TIMEOUT);
 
