@@ -410,8 +410,17 @@ async function printSection(page, file) {
   </html>
   `;
 
+
   // 4. Ouvrir une page temporaire pour le PDF
-  const pdfPage = await page.context().newPage();
+  // dans un nouveau contexte Playwright
+
+  const pdfContext = await browser.newContext({
+    viewport: { width: 1600, height: 1000 },
+    deviceScaleFactor: 1
+  });
+
+  const pdfPage = await pdfContext.newPage();
+
 
   try {
 
