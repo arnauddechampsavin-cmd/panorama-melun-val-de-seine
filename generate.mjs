@@ -577,21 +577,83 @@ async function printSection(page, file) {
         break-inside: avoid;
       }
 
-      .pdf-visual {
-        width: 100%;
-        margin: 4mm 0 6mm;
-        break-inside: avoid;
-        page-break-inside: avoid;
-      }
 
-      .pdf-visual img {
-        display: block;
-        width: 100%;
-        height: auto;
-        max-height: 165mm;
-        object-fit: contain;
-        object-position: top center;
-      }
+/* ==========================================
+   VISUALISATIONS - VERSION EDITORIALE
+   ========================================== */
+
+.pdf-visual {
+  width: 100%;
+  margin: 3mm 0 5mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.pdf-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 155mm;
+  object-fit: contain;
+  object-position: top center;
+}
+
+/* Deux graphiques cote a cote */
+
+.pdf-visual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5mm;
+  width: 100%;
+  margin: 3mm 0 5mm;
+  align-items: start;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.pdf-visual-grid .pdf-visual {
+  margin: 0;
+  min-width: 0;
+}
+
+.pdf-visual-grid img {
+  width: 100%;
+  max-height: 130mm;
+  object-fit: contain;
+}
+
+/* Indicateurs */
+
+.pdf-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3mm;
+  margin: 0 0 4mm;
+  align-items: start;
+}
+
+.pdf-card {
+  border: 1px solid #E0E5ED;
+  border-radius: 2mm;
+  background: #F7F9FC;
+  padding: 3mm 4mm;
+  min-width: 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Eviter les titres isoles */
+
+.pdf-heading {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.pdf-text {
+  margin-bottom: 4mm;
+  line-height: 1.4;
+}
+
 
       .pdf-card,
       .pdf-visual {
