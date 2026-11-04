@@ -8,8 +8,18 @@ import {
   rgb
 } from 'pdf-lib';
 
+// =====================================================
+// PANORAMA TERRITORIAL - CAMVS
+// ASSEMBLAGE VERSION 6
+// Couverture + sommaire + indicateurs cles
+// + 13 sous-thematiques
+// =====================================================
+
 const OUT = 'output';
 const ASSETS = 'assets';
+
+const URL =
+  'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
 
 const DEST = path.join(
   OUT,
@@ -27,12 +37,12 @@ const themes = [
   {
     name: 'EMPLOI',
     image: 'emploi.png',
-    subtitle: 'Activité, emplois et conditions de travail'
+    subtitle: 'Activité et conditions de travail'
   },
   {
     name: 'LOGEMENTS',
     image: 'logement.png',
-    subtitle: 'Habitat et caractéristiques du parc'
+    subtitle: 'Habitat et parc de logements'
   },
   {
     name: 'ENTREPRISES',
@@ -40,6 +50,10 @@ const themes = [
     subtitle: 'Établissements et tissu économique'
   }
 ];
+
+// =====================================================
+// UTILITAIRES
+// =====================================================
 
 const escapeHTML = value => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -57,7 +71,17 @@ async function imageData(filename) {
     bytes.toString('base64');
 }
 
-// Charger le rapport de generation
+async function readImageData(filename) {
+  const bytes = await fs.readFile(filename);
+
+  return 'data:image/png;base64,' +
+    bytes.toString('base64');
+}
+
+// =====================================================
+// 1. CHARGER LES PDF INDIVIDUELS
+// =====================================================
+
 const report = JSON.parse(
   await fs.readFile(
     path.join(OUT, 'rapport.json'),
@@ -70,15 +94,14 @@ const successful = report
   .sort((a, b) => a.number - b.number);
 
 if (
-  successful.length !== report.length ||
-  successful.length === 0
+  successful.length === 0 ||
+  successful.length !== report.length
 ) {
   throw new Error(
-    'Assemblage impossible : certaines rubriques ont echoue.'
+    'Assemblage interrompu : certaines rubriques ont echoue.'
   );
 }
 
-// Charger les PDF et calculer leurs pages
 const sections = [];
 
 for (const item of successful) {
@@ -99,22 +122,16 @@ console.log(
   `${sections.length} rubriques disponibles`
 );
 
-// Images pour la couverture et le sommaire
+// =====================================================
+// 2. CHARGER LES ILLUSTRATIONS
+// =====================================================
+
 const banner = await imageData(
   'homepage-datagrid-banner.png'
 );
 
 for (const theme of themes) {
   theme.data = await imageData(theme.image);
-}
-
-// Les deux premieres pages sont la couverture
-// et le sommaire.
-let nextPage = 3;
-
-for (const section of sections) {
-  section.startPage = nextPage;
-  nextPage += section.pages;
 }
 
 const edition = new Date().toLocaleDateString(
@@ -126,6 +143,185 @@ const edition = new Date().toLocaleDateString(
   }
 );
 
+// =====================================================
+// 3. RECUPERER LES INDICATEURS CLES HUWISE
+// =====================================================
+
+const browser = await chromium.launch({
+  headless: true
+});
+
+let overviewImage;
+
+try {
+  const context = await browser.newContext({
+    viewport: {
+      width: 1600,
+      height: 1000
+    },
+    deviceScaleFactor: 2
+  });
+
+  const page = await context.newPage();
+
+  await page.goto(URL, {
+    waitUntil: 'domcontentloaded',
+    timeout: 90000
+  });
+
+  // Neutraliser la fenetre de cookies
+  // uniquement dans le robot.
+
+  await page.addStyleTag({
+    content: `
+      ods-manage-cookies-preferences-modal,
+      .ods-manage-cookies-preferences,
+      .modal-backdrop {
+        display: none !important;
+        pointer-events: none !important;
+      }
+    `
+  });
+
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+
+  // Attendre les donnees et la carte.
+  await page.waitForTimeout(5000);
+
+  // Trouver la zone des indicateurs cles.
+  // On utilise les titres visibles plutot qu'une
+  // classe CSS specifique, pour limiter la
+  // dependance a la structure HUWISE.
+
+  const bounds = await page.evaluate(() => {
+    const elements = [
+      ...document.querySelectorAll(
+        'h1, h2, h3, h4, label, div, span'
+      )
+    ];
+
+    const findText = pattern => {
+      return elements.find(el => {
+        const text = (
+          el.innerText || ''
+        ).trim();
+
+        return (
+          text.length < 100 &&
+          pattern.test(text) &&
+          el.getBoundingClientRect().height > 0
+        );
+      });
+    };
+
+    const heading = findText(
+      /indicateurs cl[eé]s du territoire/i
+    );
+
+    const filter = findText(
+      /filtrer par commune/i
+    );
+
+    if (!heading || !filter) {
+      return null;
+    }
+
+    const headingRect =
+      heading.getBoundingClientRect();
+
+    const filterRect =
+      filter.getBoundingClientRect();
+
+    const top =
+      headingRect.top + window.scrollY - 12;
+
+    const bottom =
+      filterRect.top + window.scrollY - 12;
+
+    if (
+      bottom <= top ||
+      bottom - top < 100 ||
+      bottom - top > 1800
+    ) {
+      return null;
+    }
+
+    return {
+      x: 0,
+      y: Math.max(0, top),
+      width: 1600,
+      height: bottom - Math.max(0, top)
+    };
+  });
+
+  if (!bounds) {
+    throw new Error(
+      'Zone des indicateurs cles introuvable. ' +
+      'Verifier les titres sur la page HUWISE.'
+    );
+  }
+
+  // Faire defiler la zone pour declencher
+  // le chargement de ses visualisations.
+
+  await page.evaluate(y => {
+    window.scrollTo(0, y);
+  }, bounds.y);
+
+  await page.waitForTimeout(3000);
+
+  // Capture haute resolution de la zone.
+  // Elle contient les valeurs et la carte
+  // telles qu'affichees sur HUWISE.
+
+  const overviewPath = path.join(
+    OUT,
+    '00-indicateurs-cles.png'
+  );
+
+  await page.screenshot({
+    path: overviewPath,
+    clip: bounds,
+    animations: 'disabled',
+    timeout: 60000
+  });
+
+  overviewImage = await readImageData(
+    overviewPath
+  );
+
+  console.log(
+    'Indicateurs cles captures depuis HUWISE'
+  );
+
+  await context.close();
+
+} finally {
+  await browser.close();
+}
+
+// =====================================================
+// 4. CALCULER LA PAGINATION
+// =====================================================
+
+// Page 1 : couverture
+// Page 2 : sommaire
+// Page 3 : indicateurs cles
+// Page 4 : premiere sous-thematique
+
+let nextPage = 4;
+
+for (const section of sections) {
+  section.startPage = nextPage;
+  nextPage += section.pages;
+}
+
+// =====================================================
+// 5. STYLES GENERAUX
+// =====================================================
+
 const baseCSS = `
   @page {
     size: A4 landscape;
@@ -134,13 +330,15 @@ const baseCSS = `
 
   * {
     box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   html, body {
     margin: 0;
     padding: 0;
     width: 297mm;
-    height: 210mm;
+    background: white;
   }
 
   body {
@@ -153,19 +351,25 @@ const baseCSS = `
     height: 210mm;
     overflow: hidden;
     page-break-after: always;
+    break-after: page;
   }
 
   .page:last-child {
     page-break-after: auto;
+    break-after: auto;
   }
 `;
 
-// Couverture institutionnelle
+// =====================================================
+// 6. COUVERTURE
+// =====================================================
+
 const coverHTML = `
 <div class="page" style="
   background:#041447;
   color:white;
 ">
+
   <div style="
     position:absolute;
     top:18mm;
@@ -192,6 +396,7 @@ const coverHTML = `
     left:20mm;
     top:53mm;
   ">
+
     <div style="
       font-size:43pt;
       font-weight:800;
@@ -216,6 +421,7 @@ const coverHTML = `
     ">
       20 communes, un territoire en données
     </div>
+
   </div>
 
   <img src="${banner}" style="
@@ -238,10 +444,14 @@ const coverHTML = `
   ">
     data.melunvaldeseine.fr
   </div>
+
 </div>
 `;
 
-// Sommaire automatique
+// =====================================================
+// 7. SOMMAIRE ILLUSTRE
+// =====================================================
+
 const tocGroups = themes.map(theme => {
   const entries = sections.filter(
     section =>
@@ -307,6 +517,7 @@ const tocHTML = `
           padding:5mm;
           color:white;
         ">
+
           <img src="${group.data}" style="
             position:absolute;
             right:0;
@@ -326,9 +537,11 @@ const tocHTML = `
             ${String(index + 1).padStart(2, '0')}
             &nbsp; ${escapeHTML(group.name)}
           </div>
+
         </div>
 
         <div style="padding:4mm 5mm;">
+
           ${group.entries.map(section => `
             <div style="
               display:flex;
@@ -340,6 +553,7 @@ const tocHTML = `
               line-height:1.25;
               border-bottom:1px solid #E6EAF0;
             ">
+
               <span>
                 ${escapeHTML(section.section)}
               </span>
@@ -350,8 +564,10 @@ const tocHTML = `
               ">
                 ${section.startPage}
               </strong>
+
             </div>
           `).join('')}
+
         </div>
       </div>
     `).join('')}
@@ -371,16 +587,115 @@ const tocHTML = `
     <span>data.melunvaldeseine.fr</span>
     <span>Sommaire</span>
   </div>
+
 </div>
 `;
 
-// Generer couverture et sommaire avec Playwright
-const browser = await chromium.launch({
+// =====================================================
+// 8. PAGE INDICATEURS CLES
+// =====================================================
+
+const overviewHTML = `
+<div class="page" style="
+  background:#FFFFFF;
+  color:#041447;
+  padding:13mm 15mm;
+">
+
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  ">
+
+    <div style="
+      font-size:9pt;
+      font-weight:700;
+      letter-spacing:1px;
+      color:#60708A;
+    ">
+      PANORAMA TERRITORIAL
+    </div>
+
+    <div style="
+      font-size:9pt;
+      color:#F24E4C;
+      font-weight:700;
+    ">
+      LE TERRITOIRE
+    </div>
+
+  </div>
+
+  <h1 style="
+    font-size:25pt;
+    font-weight:800;
+    margin:6mm 0 3mm;
+  ">
+    Les indicateurs clés du territoire
+  </h1>
+
+  <div style="
+    width:28mm;
+    height:1.2mm;
+    background:#F24E4C;
+    margin-bottom:5mm;
+  "></div>
+
+  <div style="
+    width:100%;
+    height:143mm;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+  ">
+
+    <img src="${overviewImage}" style="
+      display:block;
+      max-width:100%;
+      max-height:100%;
+      width:auto;
+      height:auto;
+      object-fit:contain;
+    ">
+
+  </div>
+
+  <div style="
+    position:absolute;
+    bottom:9mm;
+    left:15mm;
+    right:15mm;
+    display:flex;
+    justify-content:space-between;
+    font-size:8pt;
+    color:#64748B;
+  ">
+
+    <span>
+      Source : data.melunvaldeseine.fr
+    </span>
+
+    <span>
+      Agglomération Melun Val de Seine
+    </span>
+
+  </div>
+
+</div>
+`;
+
+// =====================================================
+// 9. GENERER LES TROIS PAGES D'INTRODUCTION
+// =====================================================
+
+const introBrowser = await chromium.launch({
   headless: true
 });
 
 try {
-  const context = await browser.newContext({
+  const context = await introBrowser.newContext({
     viewport: {
       width: 1600,
       height: 1100
@@ -396,9 +711,11 @@ try {
         <meta charset="UTF-8">
         <style>${baseCSS}</style>
       </head>
+
       <body>
         ${coverHTML}
         ${tocHTML}
+        ${overviewHTML}
       </body>
     </html>
   `, {
@@ -416,7 +733,10 @@ try {
   });
 
   await page.pdf({
-    path: path.join(OUT, '00-couverture-sommaire.pdf'),
+    path: path.join(
+      OUT,
+      '00-introduction.pdf'
+    ),
     format: 'A4',
     landscape: true,
     printBackground: true,
@@ -426,21 +746,25 @@ try {
   await context.close();
 
 } finally {
-  await browser.close();
+  await introBrowser.close();
 }
 
-// Assembler les documents
+// =====================================================
+// 10. ASSEMBLAGE FINAL
+// =====================================================
+
 const finalPDF = await PDFDocument.create();
 
 const introBytes = await fs.readFile(
-  path.join(OUT, '00-couverture-sommaire.pdf')
+  path.join(OUT, '00-introduction.pdf')
 );
 
 const introPDF = await PDFDocument.load(introBytes);
 
-if (introPDF.getPageCount() !== 2) {
+if (introPDF.getPageCount() !== 3) {
   throw new Error(
-    'La couverture et le sommaire doivent occuper 2 pages.'
+    'Introduction invalide : 3 pages attendues, ' +
+    `${introPDF.getPageCount()} obtenues.`
   );
 }
 
@@ -464,7 +788,10 @@ for (const section of sections) {
   }
 }
 
-// Pagination
+// =====================================================
+// 11. PAGINATION
+// =====================================================
+
 const font = await finalPDF.embedFont(
   StandardFonts.Helvetica
 );
@@ -472,8 +799,12 @@ const font = await finalPDF.embedFont(
 const pages = finalPDF.getPages();
 const total = pages.length;
 
+// La couverture n'a pas de numero.
+// La page des indicateurs est la page 3.
+
 for (let index = 2; index < total; index++) {
   const page = pages[index];
+
   const { width } = page.getSize();
 
   const label = `${index + 1} / ${total}`;
@@ -487,13 +818,20 @@ for (let index = 2; index < total; index++) {
   });
 }
 
-// Metadonnees
+// =====================================================
+// 12. METADONNEES ET ENREGISTREMENT
+// =====================================================
+
 finalPDF.setTitle(
   'Panorama territorial - Melun Val de Seine'
 );
 
 finalPDF.setAuthor(
-  'Agglomeration Melun Val de Seine'
+  'Agglomération Melun Val de Seine'
+);
+
+finalPDF.setSubject(
+  'Indicateurs territoriaux et données publiques'
 );
 
 await fs.writeFile(
@@ -501,7 +839,10 @@ await fs.writeFile(
   await finalPDF.save()
 );
 
-console.log(`PDF complet cree : ${DEST}`);
+console.log(
+  `PDF complet cree : ${DEST}`
+);
+
 console.log(
   `${sections.length} rubriques - ${total} pages`
 );
