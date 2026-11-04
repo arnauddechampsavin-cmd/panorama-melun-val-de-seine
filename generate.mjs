@@ -341,10 +341,15 @@ async function printSection(page, file) {
           timeout: 30000
         });
 
+        
         elements.push({
           type: 'visual',
-          image: image.toString('base64')
+          image: image.toString('base64'),
+          width: box.width,
+          height: box.height,
+          ratio: box.width / box.height
         });
+
 
         continue;
       }
@@ -395,11 +400,21 @@ async function printSection(page, file) {
     `${title} : ${elements.length} blocs prepares`
   );
 
-  // Construire les contenus HTML
-  const content = elements.map(element => {
+  
+  // Construire une mise en page editoriale adaptative
+
+  const renderVisual = element => `
+    <div class="pdf-visual">
+      <img
+        src="data:image/png;base64,${element.image}"
+        alt="Visualisation du panorama"
+      >
+    </div>
+  `;
+
+  const renderElement = element => {
 
     if (element.type === 'cards') {
-
       return `
         <div class="pdf-cards">
           ${element.cards.map(card => `
@@ -419,15 +434,43 @@ async function printSection(page, file) {
       `;
     }
 
-    return `
-      <div class="pdf-visual">
-        <img
-          src="data:image/png;base64,${element.image}"
-          alt="Visualisation du panorama"
-        >
-      </div>
-    `;
-  }).join('');
+    return renderVisual(element);
+  };
+
+  const contentParts = [];
+
+  for (let i = 0; i < elements.length; i++) {
+
+    const current = elements[i];
+    const next = elements[i + 1];
+
+    // Deux graphiques assez larges peuvent
+    // etre places sur une meme ligne.
+    // Les graphiques hauts restent pleine largeur.
+
+    if (
+      current.type === 'visual' &&
+      next?.type === 'visual' &&
+      current.ratio >= 1.3 &&
+      next.ratio >= 1.3
+    ) {
+
+      contentParts.push(`
+        <div class="pdf-visual-grid">
+          ${renderVisual(current)}
+          ${renderVisual(next)}
+        </div>
+      `);
+
+      i++;
+      continue;
+    }
+
+    contentParts.push(renderElement(current));
+  }
+
+  const content = contentParts.join('');
+
 
   const html = `
   <!DOCTYPE html>
