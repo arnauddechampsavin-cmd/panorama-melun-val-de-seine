@@ -209,19 +209,20 @@ async function waitForVisuals(page) {
 
 
 
+
 async function printSection(page, file) {
 
-  // Mise en page optimisee uniquement pour le PDF
+  // Appliquer les styles specifiques au PDF
   await page.addStyleTag({
     content: `
       @media print {
 
         @page {
           size: A4 landscape;
-          margin: 10mm;
+          margin: 8mm;
         }
 
-        /* Masquer les elements du portail */
+        /* Masquer les elements inutiles */
 
         .ods-front-header,
         .ods-front-footer,
@@ -238,7 +239,7 @@ async function printSection(page, file) {
           display: none !important;
         }
 
-        /* Utiliser toute la largeur disponible */
+        /* Mise en page pleine largeur */
 
         .conteneur,
         .indicateurs,
@@ -255,21 +256,26 @@ async function printSection(page, file) {
           padding: 0 !important;
         }
 
-        /* Supprimer les animations */
+        .content-area {
+          background: #ffffff !important;
+          font-size: 9.5pt !important;
+          line-height: 1.35 !important;
+        }
+
+        /* Supprimer les effets ecran */
 
         .content-section,
         .content-section * {
           animation: none !important;
           transition: none !important;
-          transform: none !important;
         }
 
         /* En-tete institutionnel */
 
         .panorama-print-header {
           display: block !important;
-          margin-bottom: 5mm !important;
-          padding-bottom: 4mm !important;
+          margin-bottom: 4mm !important;
+          padding-bottom: 3mm !important;
           border-bottom: 2px solid #015ca2;
           break-after: avoid;
         }
@@ -280,7 +286,7 @@ async function printSection(page, file) {
         }
 
         .panorama-print-name {
-          font-size: 15pt !important;
+          font-size: 14pt !important;
           margin-bottom: 2mm !important;
         }
 
@@ -288,40 +294,42 @@ async function printSection(page, file) {
           font-size: 9pt !important;
         }
 
-        /* Titres des sous-thematiques */
+        /* Titre de rubrique */
 
         .panorama-export-header {
           display: block !important;
-          margin: 0 0 4mm !important;
-          padding: 0 0 3mm !important;
+          margin: 0 0 3mm !important;
+          padding: 0 0 2mm !important;
           break-after: avoid;
         }
 
         .panorama-export-header .section-title {
-          font-size: 18pt !important;
+          font-size: 17pt !important;
           margin: 0 !important;
           padding: 0 !important;
         }
 
         .kpi-description {
-          font-size: 9pt !important;
-          margin-bottom: 4mm !important;
+          font-size: 8.5pt !important;
+          margin-bottom: 3mm !important;
         }
 
-        /* Cartes d'indicateurs */
+        /* Indicateurs et textes */
 
         .content-area .cards-grid {
           display: grid !important;
           grid-template-columns:
             repeat(2, minmax(0, 1fr)) !important;
           gap: 3mm !important;
-          margin-bottom: 4mm !important;
+          margin: 0 0 3mm !important;
+          width: 100% !important;
         }
 
         .content-area .cards-grid .card {
           padding: 3mm !important;
           min-height: 0 !important;
           height: auto !important;
+          width: 100% !important;
           box-shadow: none !important;
           border: 1px solid #e2e8f0 !important;
           break-inside: avoid;
@@ -332,25 +340,25 @@ async function printSection(page, file) {
         }
 
         .content-area .kpi-title {
-          font-size: 20pt !important;
+          font-size: 19pt !important;
           margin: 2mm 0 !important;
         }
 
         .content-area .card_textpano {
           font-size: 9pt !important;
-          line-height: 1.35 !important;
+          line-height: 1.3 !important;
           padding: 2mm !important;
         }
 
-        /* Graphiques et cartes */
+        /* Graphiques */
 
-        .content-area .chart-section,
-        .content-area .map-section {
+        .content-area .chart-section {
           width: 100% !important;
-          margin: 4mm 0 !important;
+          max-width: 100% !important;
+          margin: 3mm 0 !important;
           padding: 3mm !important;
-          box-shadow: none !important;
           border: 1px solid #e2e8f0 !important;
+          box-shadow: none !important;
           break-inside: avoid;
           page-break-inside: avoid;
         }
@@ -360,17 +368,34 @@ async function printSection(page, file) {
           margin: 0 0 3mm !important;
         }
 
+        /* Cartes */
+
         .content-area .map-container {
           width: 100% !important;
           max-width: 100% !important;
+          margin: 0 auto !important;
         }
 
-        /* Ne pas couper les visualisations */
+        /* Limiter les debordements */
 
-        .odswidget-chart,
-        .odswidget-map,
-        ods-chart,
-        ods-map {
+        .content-area ods-chart,
+        .content-area ods-map,
+        .content-area .odswidget-chart,
+        .content-area .odswidget-map {
+          max-width: 100% !important;
+          break-inside: avoid;
+        }
+
+        .content-area .highcharts-container,
+        .content-area .highcharts-root {
+          max-width: 100% !important;
+        }
+
+        /* Eviter les coupures */
+
+        .content-area .card,
+        .content-area .chart-section,
+        .content-area .map-container {
           break-inside: avoid;
           page-break-inside: avoid;
         }
@@ -385,6 +410,9 @@ async function printSection(page, file) {
     `
   });
 
+  // Stabiliser le rendu avant impression
+  await page.waitForTimeout(1000);
+
   await page.pdf({
     path: file,
     format: 'A4',
@@ -393,6 +421,7 @@ async function printSection(page, file) {
     preferCSSPageSize: true
   });
 }
+
 
 
 try {
