@@ -122,36 +122,51 @@ await page.waitForTimeout(1000);
         .nth(item.itemIndex).click();
 
 
-      // 4. Attendre le chargement de la sous-thematique
+      
+      // 4. Attendre la selection de la sous-thematique
 
       console.log(
         `Ouverture : ${group.title} / ${item.title}`
       );
 
-      // Attendre que le titre de la rubrique apparaisse
+      const selectedItem = menu
+        .locator('.cl-dropdown-item')
+        .nth(item.itemIndex);
+
+      // Attendre que le menu confirme la selection
+      await selectedItem.waitFor({
+        state: 'visible',
+        timeout: 30000
+      });
+
       await page.waitForFunction(
-        (expectedTitle) => {
-          const sections = document.querySelectorAll(
-            '.content-area .content-section'
+        ({ groupIndex, itemIndex }) => {
+          const groups = document.querySelectorAll(
+            '.sidebar-nav .cl-dropdown'
           );
 
-          return [...sections].some(section => {
-            const title = section.querySelector(
-              '.section-title'
-            );
+          const item = groups[groupIndex]
+            ?.querySelectorAll('.cl-dropdown-item')[itemIndex];
 
-            return title &&
-              title.textContent.trim()
-                .toLowerCase() === expectedTitle.toLowerCase();
-          });
+          return item?.classList.contains('active');
         },
-        item.title,
-        { timeout: 45000 }
+        {
+          groupIndex: group.index,
+          itemIndex: item.itemIndex
+        },
+        { timeout: 30000 }
       );
+
+      // Attendre qu'une section de contenu soit présente
+      await page.locator(
+        '.content-area .content-section'
+      ).first().waitFor({
+        state: 'attached',
+        timeout: 30000
+      });
 
       // Laisser les graphiques et cartes se charger
       await page.waitForTimeout(4000);
-
 
       await page.waitForTimeout(2500);
 
