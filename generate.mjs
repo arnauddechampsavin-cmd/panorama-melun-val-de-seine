@@ -4,8 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // =====================================================
-// PANORAMA TERRITORIAL CAMVS
-// GENERATE.MJS - VERSION 5C
+// PANORAMA TERRITORIAL - MELUN VAL DE SEINE
+// VERSION 5D - MISE EN PAGE COMPACTE
 // =====================================================
 
 const URL =
@@ -23,16 +23,12 @@ const browser = await chromium.launch({
 const report = [];
 
 // =====================================================
-// 1. OUVERTURE DE LA PAGE HUWISE
+// 1. OUVERTURE DE HUWISE
 // =====================================================
 
 async function preparePage() {
-
   const page = await browser.newPage({
-    viewport: {
-      width: 1600,
-      height: 1000
-    },
+    viewport: { width: 1600, height: 1000 },
     deviceScaleFactor: 1
   });
 
@@ -45,12 +41,7 @@ async function preparePage() {
 
   await page.locator(
     '.sidebar-nav .cl-dropdown'
-  ).first().waitFor({
-    state: 'attached'
-  });
-
-  // Neutraliser la fenetre de cookies
-  // uniquement dans le navigateur du robot.
+  ).first().waitFor({ state: 'attached' });
 
   await page.addStyleTag({
     content: `
@@ -71,7 +62,6 @@ async function preparePage() {
 // =====================================================
 
 function slug(value) {
-
   return value.normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -81,7 +71,6 @@ function slug(value) {
 }
 
 function escapeHTML(value) {
-
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -91,40 +80,28 @@ function escapeHTML(value) {
 }
 
 // =====================================================
-// 3. SELECTION DES SOUS-THEMATIQUES
-// Navigation AngularJS avec trois tentatives
+// 3. NAVIGATION ANGULARJS
 // =====================================================
 
-async function selectSection(
-  page,
-  groupIndex,
-  itemIndex
-) {
-
+async function selectSection(page, groupIndex, itemIndex) {
   const group = page
     .locator('.sidebar-nav .cl-dropdown')
     .nth(groupIndex);
 
-  const button = group.locator(
-    '.cl-dropdown-button'
-  );
+  const button = group.locator('.cl-dropdown-button');
 
   const item = group
     .locator('.cl-dropdown-item')
     .nth(itemIndex);
 
-  const ngClick = await item.getAttribute(
-    'ng-click'
-  );
+  const ngClick = await item.getAttribute('ng-click');
 
   const match = ngClick?.match(
     /activeSubmenu\s*=\s*['"]([^'"]+)['"]/
   );
 
   if (!match) {
-    throw new Error(
-      'Identifiant de rubrique introuvable'
-    );
+    throw new Error('Identifiant de rubrique introuvable');
   }
 
   const submenuId = match[1];
@@ -132,50 +109,29 @@ async function selectSection(
   console.log(`Selection : ${submenuId}`);
 
   const sectionVisible = async () => {
-
-    return await page.evaluate(expected => {
-
+    return page.evaluate(expected => {
       return [
         ...document.querySelectorAll(
           '.content-area .content-section'
         )
-      ].some(section => {
-
-        const condition =
-          section.getAttribute('ng-if') || '';
-
-        return (
-          condition.includes(expected) &&
-          section.getBoundingClientRect().height > 0
-        );
-      });
-
+      ].some(section =>
+        (section.getAttribute('ng-if') || '')
+          .includes(expected) &&
+        section.getBoundingClientRect().height > 0
+      );
     }, submenuId);
   };
 
-  for (
-    let attempt = 1;
-    attempt <= 3;
-    attempt++
-  ) {
-
+  for (let attempt = 1; attempt <= 3; attempt++) {
     if (await sectionVisible()) {
-
-      console.log(
-        `Section affichee : ${submenuId}`
-      );
-
+      console.log(`Section affichee : ${submenuId}`);
       return;
     }
 
-    console.log(
-      `Tentative ${attempt}/3 : ${submenuId}`
-    );
+    console.log(`Tentative ${attempt}/3 : ${submenuId}`);
 
     const isOpen = await button.evaluate(el =>
-      el.classList.contains(
-        'cl-dropdown-button-open'
-      )
+      el.classList.contains('cl-dropdown-button-open')
     );
 
     if (!isOpen) {
@@ -183,59 +139,36 @@ async function selectSection(
     }
 
     await page.waitForFunction(index => {
-
-      const group =
-        document.querySelectorAll(
-          '.sidebar-nav .cl-dropdown'
-        )[index];
+      const group = document.querySelectorAll(
+        '.sidebar-nav .cl-dropdown'
+      )[index];
 
       return group?.querySelector(
         '.cl-dropdown-menu'
-      )?.classList.contains(
-        'cl-dropdown-visible'
-      );
+      )?.classList.contains('cl-dropdown-visible');
+    }, groupIndex, { timeout: 10000 });
 
-    }, groupIndex, {
-      timeout: 10000
-    });
-
-    await item.click({
-      timeout: 15000
-    });
+    await item.click({ timeout: 15000 });
 
     try {
-
       await page.waitForFunction(expected => {
-
         return [
           ...document.querySelectorAll(
             '.content-area .content-section'
           )
-        ].some(section => {
+        ].some(section =>
+          (section.getAttribute('ng-if') || '')
+            .includes(expected) &&
+          section.getBoundingClientRect().height > 0
+        );
+      }, submenuId, { timeout: 8000 });
 
-          const condition =
-            section.getAttribute('ng-if') || '';
-
-          return (
-            condition.includes(expected) &&
-            section.getBoundingClientRect().height > 0
-          );
-        });
-
-      }, submenuId, {
-        timeout: 8000
-      });
-
-      console.log(
-        `Section affichee : ${submenuId}`
-      );
-
+      console.log(`Section affichee : ${submenuId}`);
       return;
 
     } catch (error) {
-
       console.warn(
-        `Selection non confirmee, tentative ${attempt}`
+        `Selection non confirmee : tentative ${attempt}`
       );
 
       await page.waitForTimeout(1000);
@@ -252,7 +185,6 @@ async function selectSection(
 // =====================================================
 
 async function waitForVisuals(page) {
-
   const section = page.locator(
     '.content-area .content-section:visible'
   ).first();
@@ -266,11 +198,7 @@ async function waitForVisuals(page) {
     await document.fonts.ready;
   });
 
-  // Parcourir les visualisations pour declencher
-  // leur chargement progressif.
-
   await page.evaluate(async () => {
-
     const elements = [
       ...document.querySelectorAll(
         '.content-section .chart-section, ' +
@@ -279,7 +207,6 @@ async function waitForVisuals(page) {
     ];
 
     for (const element of elements) {
-
       element.scrollIntoView({
         block: 'center',
         behavior: 'instant'
@@ -293,32 +220,21 @@ async function waitForVisuals(page) {
 
   await section.scrollIntoViewIfNeeded();
 
-  // Attendre les images.
-
   await page.evaluate(async () => {
-
     await Promise.all(
       [...document.images].map(img => {
-
-        if (img.complete) {
-          return Promise.resolve();
-        }
+        if (img.complete) return Promise.resolve();
 
         return new Promise(resolve => {
-
           const finish = () => resolve();
 
-          img.addEventListener(
-            'load',
-            finish,
-            { once: true }
-          );
+          img.addEventListener('load', finish, {
+            once: true
+          });
 
-          img.addEventListener(
-            'error',
-            finish,
-            { once: true }
-          );
+          img.addEventListener('error', finish, {
+            once: true
+          });
 
           setTimeout(finish, 8000);
         });
@@ -326,25 +242,15 @@ async function waitForVisuals(page) {
     );
   });
 
-  // Verifier les graphiques Highcharts.
-
   await page.waitForFunction(() => {
-
-    const charts =
-      document.querySelectorAll(
-        '.content-section ods-chart'
-      );
-
-    return [...charts].every(chart =>
-      chart.querySelector(
-        '.highcharts-container'
-      )
+    const charts = document.querySelectorAll(
+      '.content-section ods-chart'
     );
 
-  }, null, {
-    timeout: 15000
-  }).catch(() => {
-
+    return [...charts].every(chart =>
+      chart.querySelector('.highcharts-container')
+    );
+  }, null, { timeout: 15000 }).catch(() => {
     console.warn(
       'Certains graphiques ne sont pas confirmes'
     );
@@ -356,18 +262,15 @@ async function waitForVisuals(page) {
 }
 
 // =====================================================
-// 5. GENERATION PDF - VERSION 5C
+// 5. GENERATION PDF - VERSION 5D
 // =====================================================
 
 async function printSection(page, file) {
-
   const section = page.locator(
     '.content-area .content-section:visible'
   ).first();
 
-  await section.waitFor({
-    state: 'visible'
-  });
+  await section.waitFor({ state: 'visible' });
 
   const title = await section.locator(
     '.section-title'
@@ -398,68 +301,54 @@ async function printSection(page, file) {
     themeColor = '#8a6ea9';
   }
 
-  // -------------------------------------------------
-  // 5A. RECUPERER LES BLOCS
-  // -------------------------------------------------
+  // -----------------------------------------------
+  // 5A. EXTRACTION DES BLOCS
+  // -----------------------------------------------
 
   const blocks = section.locator(
     '.cards-grid, .chart-section, .map-section'
   );
 
   const elements = [];
-  const count = await blocks.count();
 
-  for (let i = 0; i < count; i++) {
-
+  for (let i = 0; i < await blocks.count(); i++) {
     const block = blocks.nth(i);
 
-    // Ignorer les blocs imbriques.
-
-    const nested = await block.evaluate(el => {
-
-      return !!el.parentElement.closest(
+    const nested = await block.evaluate(el =>
+      !!el.parentElement.closest(
         '.cards-grid, .chart-section, .map-section'
-      );
-    });
+      )
+    );
 
     if (nested) continue;
 
     const box = await block.boundingBox();
 
-    if (!box || box.height < 5) {
-      continue;
-    }
+    if (!box || box.height < 5) continue;
 
     const isCards = await block.evaluate(el =>
       el.classList.contains('cards-grid')
     );
 
-    // Exception pour les indicateurs dynamiques
-    // de la rubrique Entreprises.
+    const specialEnterprise =
+      /formes juridiques|familles d.activit/i.test(title);
 
-    const captureAsImage =
-      /formes juridiques|familles d.activit/i
-        .test(title);
-
-    if (isCards && !captureAsImage) {
-
+    if (isCards && !specialEnterprise) {
       const cards = await block.locator(
         ':scope > .card'
       ).evaluateAll(nodes =>
         nodes.map(card => ({
-          html: card.innerHTML
+          html: card.innerHTML,
+          textLength: card.innerText.trim().length
         }))
       );
 
-      if (cards.length > 0) {
-
+      if (cards.length) {
         elements.push({
           type: 'cards',
           cards
         });
-
       } else {
-
         elements.push({
           type: 'text',
           html: await block.innerHTML()
@@ -467,14 +356,10 @@ async function printSection(page, file) {
       }
 
     } else {
-
-      // Capture des cartes et graphiques,
-      // et des indicateurs Entreprises speciaux.
-
       await block.scrollIntoViewIfNeeded();
 
       await page.waitForTimeout(
-        captureAsImage ? 700 : 400
+        specialEnterprise ? 700 : 400
       );
 
       const image = await block.screenshot({
@@ -489,7 +374,8 @@ async function printSection(page, file) {
         image: image.toString('base64'),
         width: box.width,
         height: box.height,
-        ratio: box.width / box.height
+        ratio: box.width / box.height,
+        kind: isCards ? 'indicators' : 'chart'
       });
     }
   }
@@ -498,178 +384,165 @@ async function printSection(page, file) {
     `${title} : ${elements.length} blocs prepares`
   );
 
-  // -------------------------------------------------
-  // 5B. CONSTRUIRE LES BLOCS HTML
-  // -------------------------------------------------
+  // -----------------------------------------------
+  // 5B. HTML DES INDICATEURS
+  // -----------------------------------------------
+
+  const renderCards = element => {
+    return `
+      <div class="pdf-cards">
+        ${element.cards.map(card => {
+          const isLong = card.textLength > 240;
+
+          return `
+            <div class="pdf-card ${isLong ? 'pdf-card-long' : ''}">
+              ${card.html}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  };
+
+  const renderInformation = element => {
+    if (element.type === 'cards') {
+      return renderCards(element);
+    }
+
+    return `
+      <div class="pdf-text">
+        ${element.html}
+      </div>
+    `;
+  };
 
   const renderVisual = element => `
-    <div class="pdf-visual">
+    <figure class="pdf-visual">
       <img
         src="data:image/png;base64,${element.image}"
         alt="Visualisation territoriale"
       >
-    </div>
+    </figure>
   `;
 
-  const renderElement = element => {
-
-    if (element.type === 'cards') {
-
-      return `
-        <div class="pdf-cards">
-          ${element.cards.map(card => `
-            <div class="pdf-card">
-              ${card.html}
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-
-    if (element.type === 'text') {
-
-      return `
-        <div class="pdf-text">
-          ${element.html}
-        </div>
-      `;
-    }
-
-    return renderVisual(element);
-  };
-
-  // -------------------------------------------------
-  // 5C. CHOISIR LE GABARIT
-  // -------------------------------------------------
+  // -----------------------------------------------
+  // 5C. COMPOSITION EDITORIALE
+  // -----------------------------------------------
 
   const information = elements.filter(
-    element =>
-      element.type === 'cards' ||
-      element.type === 'text'
+    el => el.type === 'cards' || el.type === 'text'
   );
 
   const visuals = elements.filter(
-    element => element.type === 'visual'
+    el => el.type === 'visual'
   );
 
-  const ratio = element =>
-    element.ratio ||
-    (
-      element.width && element.height
-        ? element.width / element.height
-        : 1
-    );
+  // Les cartes et les graphiques tres hauts
+  // restent sur toute la largeur.
+  const complexVisual = visuals.some(
+    el => el.ratio < 1.15 ||
+      el.height > 750
+  );
 
-  const contentParts = [];
+  const infoHTML = information
+    .map(renderInformation)
+    .join('');
 
-  // Gabarit A :
-  // Indicateurs a gauche, deux visualisations
-  // a droite.
+  let content = '';
 
+  // Gabarit A : informations + deux visuels
+  // de dimensions raisonnables.
   if (
-    information.length > 0 &&
-    visuals.length === 2
+    information.length &&
+    visuals.length === 2 &&
+    !complexVisual
   ) {
-
-    contentParts.push(`
+    content = `
       <div class="pdf-layout-a">
-
         <div class="pdf-layout-a-info">
-          ${information.map(renderElement).join('')}
+          ${infoHTML}
         </div>
-
         <div class="pdf-layout-a-visuals">
           ${visuals.map(renderVisual).join('')}
         </div>
-
       </div>
-    `);
+    `;
 
-  // Gabarit B :
-  // Indicateurs a gauche, un graphique a droite.
-
+  // Gabarit B : informations et un visuel.
   } else if (
-    information.length > 0 &&
-    visuals.length === 1
+    information.length &&
+    visuals.length === 1 &&
+    !complexVisual
   ) {
-
-    contentParts.push(`
+    content = `
       <div class="pdf-layout-b">
-
         <div class="pdf-layout-b-info">
-          ${information.map(renderElement).join('')}
+          ${infoHTML}
         </div>
-
-        <div class="pdf-layout-b-chart">
+        <div class="pdf-layout-b-visual">
           ${renderVisual(visuals[0])}
         </div>
-
       </div>
-    `);
+    `;
 
-  // Gabarit C :
-  // Visualisations complexes, pleine largeur
-  // ou par paires.
-
+  // Gabarit C : informations pleine largeur,
+  // puis visualisations.
   } else {
+    const visualParts = [];
 
-    contentParts.push(
-      information.map(renderElement).join('')
-    );
-
-    for (
-      let i = 0;
-      i < visuals.length;
-      i++
-    ) {
-
+    for (let i = 0; i < visuals.length; i++) {
       const current = visuals[i];
       const next = visuals[i + 1];
 
-      if (
+      const canPair =
         next &&
-        ratio(current) >= 1.4 &&
-        ratio(next) >= 1.4
-      ) {
+        current.ratio >= 1.7 &&
+        next.ratio >= 1.7 &&
+        current.height < 550 &&
+        next.height < 550;
 
-        contentParts.push(`
-          <div class="pdf-layout-pair">
+      if (canPair) {
+        visualParts.push(`
+          <div class="pdf-visual-pair">
             ${renderVisual(current)}
             ${renderVisual(next)}
           </div>
         `);
 
         i++;
-
       } else {
-
-        contentParts.push(`
-          <div class="pdf-layout-full">
+        visualParts.push(`
+          <div class="pdf-visual-full">
             ${renderVisual(current)}
           </div>
         `);
       }
     }
+
+    content = `
+      <div class="pdf-info-full">
+        ${infoHTML}
+      </div>
+      <div class="pdf-visuals-full">
+        ${visualParts.join('')}
+      </div>
+    `;
   }
 
-  const content = contentParts.join('');
-
-  // -------------------------------------------------
-  // 5D. DOCUMENT HTML INDEPENDANT
-  // -------------------------------------------------
+  // -----------------------------------------------
+  // 5D. DOCUMENT HTML
+  // -----------------------------------------------
 
   const html = `
   <!DOCTYPE html>
   <html lang="fr">
-
   <head>
     <meta charset="UTF-8">
 
     <style>
-
       @page {
         size: A4 landscape;
-        margin: 10mm;
+        margin: 9mm;
       }
 
       * {
@@ -678,48 +551,47 @@ async function printSection(page, file) {
         print-color-adjust: exact;
       }
 
-      html,
-      body {
+      html, body {
         margin: 0;
         padding: 0;
       }
 
       body {
         font-family: Raleway, Arial, sans-serif;
-        font-size: 10pt;
-        line-height: 1.4;
         color: #041447;
-        background: #ffffff;
+        background: white;
+        font-size: 9.5pt;
+        line-height: 1.35;
       }
 
       /* EN-TETE */
 
       .pdf-heading {
         border-bottom: 2px solid #F24E4C;
+        margin-bottom: 4mm;
         padding-bottom: 3mm;
-        margin-bottom: 5mm;
         break-after: avoid;
       }
 
       .pdf-brand {
-        color: #041447;
         font-size: 8pt;
         font-weight: 700;
-        letter-spacing: 0.7px;
-        margin-bottom: 3mm;
+        color: #041447;
+        letter-spacing: .5px;
+        margin-bottom: 2mm;
       }
 
       h1 {
+        font-size: 18pt;
         color: #041447;
-        font-size: 19pt;
-        line-height: 1.2;
+        line-height: 1.15;
         margin: 0 0 2mm;
       }
 
       .pdf-source {
-        color: #64748b;
-        font-size: 8.5pt;
+        font-size: 8pt;
         font-style: italic;
+        color: #64748b;
       }
 
       /* INDICATEURS */
@@ -728,32 +600,35 @@ async function printSection(page, file) {
         display: grid;
         grid-template-columns:
           repeat(2, minmax(0, 1fr));
-        gap: 3mm;
-        margin-bottom: 4mm;
+        gap: 2.5mm;
+        margin-bottom: 3mm;
         align-items: start;
       }
 
       .pdf-card {
+        min-width: 0;
+        padding: 2.5mm 3mm;
         background: #F6F8FB;
         border: 1px solid #E0E5ED;
         border-radius: 2mm;
-        padding: 3mm;
-        min-width: 0;
-        margin-bottom: 2mm;
         break-inside: avoid;
+      }
+
+      .pdf-card-long {
+        grid-column: 1 / -1;
       }
 
       .pdf-card .card__title {
         color: #64748b;
         font-size: 9pt;
-        margin: 0 0 2mm;
+        margin: 0 0 1mm;
       }
 
       .pdf-card .kpi-title {
         color: ${themeColor};
-        font-size: 20pt;
+        font-size: 19pt;
         font-weight: 700;
-        margin: 2mm 0;
+        margin: 1mm 0;
       }
 
       .pdf-card .description {
@@ -769,17 +644,22 @@ async function printSection(page, file) {
         padding: 0;
       }
 
+      .pdf-card p {
+        margin: 1mm 0;
+      }
+
       .pdf-text {
-        margin-bottom: 4mm;
-        line-height: 1.4;
+        margin: 0 0 3mm;
+        font-size: 9pt;
+        line-height: 1.35;
       }
 
       /* VISUALISATIONS */
 
       .pdf-visual {
-        width: 100%;
+        margin: 0;
+        padding: 0;
         min-width: 0;
-        margin: 0 0 4mm;
         break-inside: avoid;
       }
 
@@ -787,7 +667,7 @@ async function printSection(page, file) {
         display: block;
         width: 100%;
         height: auto;
-        max-height: 155mm;
+        max-height: 160mm;
         object-fit: contain;
         object-position: top center;
       }
@@ -797,8 +677,8 @@ async function printSection(page, file) {
       .pdf-layout-a {
         display: grid;
         grid-template-columns:
-          40% minmax(0, 1fr);
-        gap: 5mm;
+          45% minmax(0, 1fr);
+        gap: 4mm;
         align-items: start;
       }
 
@@ -806,15 +686,15 @@ async function printSection(page, file) {
         min-width: 0;
       }
 
-      .pdf-layout-a-info .pdf-cards {
-        grid-template-columns: 1fr;
-      }
-
       .pdf-layout-a-visuals {
         display: grid;
         grid-template-columns: 1fr;
-        gap: 4mm;
+        gap: 3mm;
         min-width: 0;
+      }
+
+      .pdf-layout-a-visuals img {
+        max-height: 75mm;
       }
 
       /* GABARIT B */
@@ -822,56 +702,76 @@ async function printSection(page, file) {
       .pdf-layout-b {
         display: grid;
         grid-template-columns:
-          35% minmax(0, 1fr);
-        gap: 6mm;
+          42% minmax(0, 1fr);
+        gap: 4mm;
         align-items: start;
       }
 
       .pdf-layout-b-info,
-      .pdf-layout-b-chart {
+      .pdf-layout-b-visual {
         min-width: 0;
       }
 
-      .pdf-layout-b-info .pdf-cards {
-        grid-template-columns: 1fr;
+      .pdf-layout-b-visual img {
+        max-height: 155mm;
       }
 
       /* GABARIT C */
 
-      .pdf-layout-pair {
+      .pdf-info-full {
+        width: 100%;
+        margin-bottom: 3mm;
+      }
+
+      .pdf-info-full .pdf-cards {
+        grid-template-columns:
+          repeat(3, minmax(0, 1fr));
+      }
+
+      .pdf-info-full .pdf-card-long {
+        grid-column: span 3;
+      }
+
+      .pdf-visuals-full {
+        display: block;
+      }
+
+      .pdf-visual-full {
+        width: 100%;
+        margin-bottom: 4mm;
+        break-inside: avoid;
+      }
+
+      .pdf-visual-pair {
         display: grid;
         grid-template-columns:
           repeat(2, minmax(0, 1fr));
-        gap: 5mm;
-        align-items: start;
-      }
-
-      .pdf-layout-full {
-        width: 100%;
+        gap: 4mm;
         margin-bottom: 4mm;
+        break-inside: avoid;
       }
 
-      /* PAGINATION */
+      .pdf-visual-pair img {
+        max-height: 135mm;
+      }
 
-      .pdf-heading,
+      /* IMPRESSION */
+
       .pdf-card,
-      .pdf-visual {
+      .pdf-visual,
+      .pdf-visual-full {
+        break-inside: avoid;
         page-break-inside: avoid;
-        break-inside: avoid;
       }
 
-      .pdf-layout-pair {
-        break-inside: avoid;
+      img {
+        max-width: 100%;
       }
-
     </style>
-
   </head>
 
   <body>
-
     <div class="pdf-heading">
-
       <div class="pdf-brand">
         AGGLOMÉRATION MELUN VAL DE SEINE
       </div>
@@ -881,37 +781,30 @@ async function printSection(page, file) {
       <div class="pdf-source">
         ${escapeHTML(source)}
       </div>
-
     </div>
 
     ${content}
-
   </body>
   </html>
   `;
 
-  // -------------------------------------------------
+  // -----------------------------------------------
   // 5E. GENERATION DU PDF
-  // -------------------------------------------------
+  // -----------------------------------------------
 
   const pdfContext = await browser.newContext({
-    viewport: {
-      width: 1600,
-      height: 1000
-    },
+    viewport: { width: 1600, height: 1000 },
     deviceScaleFactor: 1
   });
 
   const pdfPage = await pdfContext.newPage();
 
   try {
-
     await pdfPage.setContent(html, {
       waitUntil: 'load'
     });
 
     await pdfPage.evaluate(async () => {
-
       await document.fonts.ready;
 
       await Promise.all(
@@ -929,8 +822,11 @@ async function printSection(page, file) {
       preferCSSPageSize: true
     });
 
-  } finally {
+    console.log(
+      `Gabarit PDF genere : ${title}`
+    );
 
+  } finally {
     await pdfContext.close();
   }
 
@@ -938,37 +834,28 @@ async function printSection(page, file) {
 }
 
 // =====================================================
-// 6. DECOUVERTE ET GENERATION DES 13 RUBRIQUES
+// 6. GENERATION DES RUBRIQUES
 // =====================================================
 
 try {
-
   const discovery = await preparePage();
 
   const groups = await discovery.locator(
     '.sidebar-nav .cl-dropdown'
   ).evaluateAll(nodes =>
     nodes.map((node, index) => ({
-
       index,
 
-      title:
-        node.querySelector(
-          '.cl-dropdown-button'
-        )?.textContent?.trim() ||
-        `Theme ${index + 1}`,
+      title: node.querySelector(
+        '.cl-dropdown-button'
+      )?.textContent?.trim() || `Theme ${index + 1}`,
 
       items: [
-        ...node.querySelectorAll(
-          '.cl-dropdown-item'
-        )
+        ...node.querySelectorAll('.cl-dropdown-item')
       ].map((item, itemIndex) => ({
-
         itemIndex,
         title: item.textContent.trim()
-
       }))
-
     }))
   );
 
@@ -979,36 +866,30 @@ try {
 
   await discovery.close();
 
-  const totalSections = groups.reduce(
-    (sum, group) =>
-      sum + group.items.length,
-    0
-  );
-
   console.log(
-    `Detected ${totalSections} sections`
+    `Detected ${
+      groups.reduce(
+        (sum, group) => sum + group.items.length,
+        0
+      )
+    } sections`
   );
 
   let n = 0;
 
   for (const group of groups) {
-
     for (const item of group.items) {
-
       n++;
 
       const name =
         `${String(n).padStart(2, '0')}-` +
-        `${slug(group.title)}-` +
-        `${slug(item.title)}`;
+        `${slug(group.title)}-${slug(item.title)}`;
 
       let page;
 
       try {
-
         console.log(
-          `Starting ${n}: ` +
-          `${group.title} / ${item.title}`
+          `Starting ${n}: ${group.title} / ${item.title}`
         );
 
         page = await preparePage();
@@ -1021,24 +902,14 @@ try {
 
         await waitForVisuals(page);
 
-        // Capture de diagnostic.
-
         await page.screenshot({
-          path: path.join(
-            OUT,
-            `${name}-screen.png`
-          ),
+          path: path.join(OUT, `${name}-screen.png`),
           fullPage: false
         });
 
-        // Generation du PDF.
-
         await printSection(
           page,
-          path.join(
-            OUT,
-            `${name}.pdf`
-          )
+          path.join(OUT, `${name}.pdf`)
         );
 
         report.push({
@@ -1049,12 +920,9 @@ try {
           file: `${name}.pdf`
         });
 
-        console.log(
-          `PDF created: ${name}.pdf`
-        );
+        console.log(`PDF created: ${name}.pdf`);
 
       } catch (error) {
-
         console.error(
           `Failed ${name}: ${error.message}`
         );
@@ -1068,18 +936,13 @@ try {
         });
 
         if (page) {
-
           await page.screenshot({
-            path: path.join(
-              OUT,
-              `${name}-error.png`
-            ),
+            path: path.join(OUT, `${name}-error.png`),
             fullPage: false
           }).catch(() => {});
         }
 
       } finally {
-
         if (page) {
           await page.close().catch(() => {});
         }
@@ -1088,9 +951,6 @@ try {
   }
 
 } finally {
-
-  // Conserver le rapport meme en cas d'erreur.
-
   await fs.writeFile(
     path.join(OUT, 'rapport.json'),
     JSON.stringify(report, null, 2)
@@ -1111,8 +971,6 @@ console.log(
   `Finished: ${successCount}/${report.length} PDFs`
 );
 
-if (report.some(
-  item => item.status === 'error'
-)) {
+if (report.some(item => item.status === 'error')) {
   process.exitCode = 1;
 }
