@@ -169,19 +169,23 @@ async function waitForVisuals(page) {
   });
 }
 
+
 async function printSection(page, file) {
-  // Styles appliques seulement au PDF
+
+  // Mise en page optimisee uniquement pour le PDF
   await page.addStyleTag({
     content: `
       @media print {
+
         @page {
           size: A4 landscape;
-          margin: 12mm;
+          margin: 10mm;
         }
+
+        /* Masquer les elements du portail */
 
         .ods-front-header,
         .ods-front-footer,
-        .ods-front-header__menu,
         header[role="banner"],
         footer,
         .navbar,
@@ -189,10 +193,13 @@ async function printSection(page, file) {
         .sticky-content,
         .scroll-indicator,
         .panorama-export-pdf,
+        .no-print,
         .header,
         .home {
           display: none !important;
         }
+
+        /* Utiliser toute la largeur disponible */
 
         .conteneur,
         .indicateurs,
@@ -201,30 +208,135 @@ async function printSection(page, file) {
           display: block !important;
           width: 100% !important;
           max-width: none !important;
+          min-width: 0 !important;
           height: auto !important;
           min-height: 0 !important;
           overflow: visible !important;
           margin: 0 !important;
           padding: 0 !important;
-          background: white !important;
         }
 
-        .content-section {
+        /* Supprimer les animations */
+
+        .content-section,
+        .content-section * {
           animation: none !important;
+          transition: none !important;
+          transform: none !important;
         }
 
-        .chart-section,
-        .map-section {
-          break-inside: avoid;
+        /* En-tete institutionnel */
+
+        .panorama-print-header {
+          display: block !important;
+          margin-bottom: 5mm !important;
+          padding-bottom: 4mm !important;
+          border-bottom: 2px solid #015ca2;
+          break-after: avoid;
+        }
+
+        .panorama-print-brand {
+          font-size: 8pt !important;
+          color: #015ca2 !important;
+        }
+
+        .panorama-print-name {
+          font-size: 15pt !important;
+          margin-bottom: 2mm !important;
+        }
+
+        .panorama-print-location {
+          font-size: 9pt !important;
+        }
+
+        /* Titres des sous-thematiques */
+
+        .panorama-export-header {
+          display: block !important;
+          margin: 0 0 4mm !important;
+          padding: 0 0 3mm !important;
+          break-after: avoid;
+        }
+
+        .panorama-export-header .section-title {
+          font-size: 18pt !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        .kpi-description {
+          font-size: 9pt !important;
+          margin-bottom: 4mm !important;
+        }
+
+        /* Cartes d'indicateurs */
+
+        .content-area .cards-grid {
+          display: grid !important;
+          grid-template-columns:
+            repeat(2, minmax(0, 1fr)) !important;
+          gap: 3mm !important;
+          margin-bottom: 4mm !important;
+        }
+
+        .content-area .cards-grid .card {
+          padding: 3mm !important;
+          min-height: 0 !important;
+          height: auto !important;
           box-shadow: none !important;
+          border: 1px solid #e2e8f0 !important;
+          break-inside: avoid;
         }
 
-        ods-chart,
-        .odswidget-chart,
-        .highcharts-container,
-        svg.highcharts-root {
+        .content-area .card__title {
+          font-size: 9pt !important;
+        }
+
+        .content-area .kpi-title {
+          font-size: 20pt !important;
+          margin: 2mm 0 !important;
+        }
+
+        .content-area .card_textpano {
+          font-size: 9pt !important;
+          line-height: 1.35 !important;
+          padding: 2mm !important;
+        }
+
+        /* Graphiques et cartes */
+
+        .content-area .chart-section,
+        .content-area .map-section {
+          width: 100% !important;
+          margin: 4mm 0 !important;
+          padding: 3mm !important;
+          box-shadow: none !important;
+          border: 1px solid #e2e8f0 !important;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
+        .content-area .chart-section h4 {
+          font-size: 11pt !important;
+          margin: 0 0 3mm !important;
+        }
+
+        .content-area .map-container {
+          width: 100% !important;
           max-width: 100% !important;
         }
+
+        /* Ne pas couper les visualisations */
+
+        .odswidget-chart,
+        .odswidget-map,
+        ods-chart,
+        ods-map {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
+        /* Conserver les couleurs */
 
         * {
           -webkit-print-color-adjust: exact;
@@ -242,6 +354,7 @@ async function printSection(page, file) {
     preferCSSPageSize: true
   });
 }
+
 
 try {
   // Decouvrir les thematiques et sous-thematiques
