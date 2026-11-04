@@ -54,6 +54,7 @@ function slug(value) {
 
 
 
+
 async function selectSection(page, groupIndex, itemIndex) {
 
   const group = page
@@ -62,31 +63,10 @@ async function selectSection(page, groupIndex, itemIndex) {
 
   const button = group.locator('.cl-dropdown-button');
 
-  // Ouvrir le menu si necessaire
-  const isOpen = await button.evaluate(el =>
-    el.classList.contains('cl-dropdown-button-open')
-  );
-
-  if (!isOpen) {
-    await button.click();
-  }
-
-  // Attendre que le menu soit reellement ouvert
-  await page.waitForFunction((index) => {
-    const group = document.querySelectorAll(
-      '.sidebar-nav .cl-dropdown'
-    )[index];
-
-    return group?.querySelector(
-      '.cl-dropdown-menu'
-    )?.classList.contains('cl-dropdown-visible');
-  }, groupIndex, { timeout: 10000 });
-
   const item = group
     .locator('.cl-dropdown-item')
     .nth(itemIndex);
 
-  // Recuperer l'identifiant AngularJS
   const ngClick = await item.getAttribute('ng-click');
 
   const match = ngClick?.match(
@@ -101,22 +81,83 @@ async function selectSection(page, groupIndex, itemIndex) {
 
   console.log(`Selection : ${submenuId}`);
 
-  // Cliquer normalement, sans force:true
-  await item.click({ timeout: 15000 });
+  // Fonction de verification du contenu
+  const sectionVisible = async () => {
+    return await page.evaluate(expected => {
+      return [...document.querySelectorAll(
+        '.content-area .content-section'
+      )].some(section =>
+        (section.getAttribute('ng-if') || '')
+          .includes(expected) &&
+        section.getBoundingClientRect().height > 0
+      );
+    }, submenuId);
+  };
 
-  // Attendre le contenu reellement affiche
-  await page.waitForFunction((expected) => {
-    return [...document.querySelectorAll(
-      '.content-area .content-section'
-    )].some(section =>
-      (section.getAttribute('ng-if') || '')
-        .includes(expected) &&
-      section.getBoundingClientRect().height > 0
+  // Maximum 3 tentatives
+  for (let attempt = 1; attempt <= 3; attempt++) {
+
+    if (await sectionVisible()) {
+      console.log(`Section affichee : ${submenuId}`);
+      return;
+    }
+
+    console.log(
+      `Tentative ${attempt}/3 : ${submenuId}`
     );
-  }, submenuId, { timeout: 15000 });
 
-  console.log(`Section affichee : ${submenuId}`);
+    // Ouvrir le menu si necessaire
+    const isOpen = await button.evaluate(el =>
+      el.classList.contains('cl-dropdown-button-open')
+    );
+
+    if (!isOpen) {
+      await button.click();
+    }
+
+    // Attendre que le menu soit ouvert
+    await page.waitForFunction(index => {
+      const group = document.querySelectorAll(
+        '.sidebar-nav .cl-dropdown'
+      )[index];
+
+      return group?.querySelector(
+        '.cl-dropdown-menu'
+      )?.classList.contains('cl-dropdown-visible');
+    }, groupIndex, { timeout: 10000 });
+
+    // Cliquer normalement
+    await item.click({ timeout: 15000 });
+
+    // Attendre la section, sans bloquer definitivement
+    try {
+      await page.waitForFunction(expected => {
+        return [...document.querySelectorAll(
+          '.content-area .content-section'
+        )].some(section =>
+          (section.getAttribute('ng-if') || '')
+            .includes(expected) &&
+          section.getBoundingClientRect().height > 0
+        );
+      }, submenuId, { timeout: 8000 });
+
+      console.log(`Section affichee : ${submenuId}`);
+      return;
+
+    } catch (error) {
+      console.warn(
+        `Selection non confirmee, tentative ${attempt}`
+      );
+
+      await page.waitForTimeout(1000);
+    }
+  }
+
+  throw new Error(
+    `Impossible d'afficher la rubrique ${submenuId} apres 3 tentatives`
+  );
 }
+
 
 
 
