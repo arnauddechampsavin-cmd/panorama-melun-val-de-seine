@@ -1,0 +1,41 @@
+
+name: Generation du panorama territorial
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generer les PDF
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Recuperer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Installer les dependances
+        run: npm install
+
+      - name: Installer Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Generer les PDF
+        run: npm run generate
+
+      - name: Conserver les PDF generes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panorama-territorial-pdf
+          path: output/
+          if-no-files-found: warn
+          retention-days: 30
