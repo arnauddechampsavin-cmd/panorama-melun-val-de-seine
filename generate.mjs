@@ -87,8 +87,59 @@ async function selectSection(page, groupIndex, itemIndex) {
 
   console.log(`Sous-thematique attendue : ${submenuId}`);
 
+  
   // Cliquer sur la sous-thematique
   await item.click({ force: true });
+
+  // DIAGNOSTIC : verifier ce qui a reellement change
+  await page.waitForTimeout(1500);
+
+  const diagnostic = await page.evaluate(() => {
+    const menu = document.querySelector('.sidebar-nav');
+
+    const activeItems = [
+      ...document.querySelectorAll(
+        '.sidebar-nav .cl-dropdown-item.active'
+      )
+    ].map(el => ({
+      text: el.textContent.trim(),
+      click: el.getAttribute('ng-click')
+    }));
+
+    const sections = [
+      ...document.querySelectorAll(
+        '.content-area .content-section'
+      )
+    ].map(el => ({
+      condition: el.getAttribute('ng-if'),
+      title: el.querySelector('.section-title')
+        ?.textContent.trim(),
+      visible: el.getBoundingClientRect().height > 0
+    }));
+
+    let angularValue = null;
+
+    try {
+      if (window.angular && menu) {
+        const scope = window.angular.element(menu).scope();
+        angularValue = scope?.activeSubmenu ?? null;
+      }
+    } catch (e) {
+      angularValue = 'scope inaccessible';
+    }
+
+    return {
+      angularValue,
+      activeItems,
+      sections
+    };
+  });
+
+  console.log(
+    'DIAGNOSTIC ' + submenuId + ': ' +
+    JSON.stringify(diagnostic, null, 2)
+  );
+
 
   // Attendre que le contenu correspondant apparaisse
   await page.waitForFunction(
