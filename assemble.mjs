@@ -2,58 +2,25 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import {
-  PDFDocument,
-  StandardFonts,
-  rgb
-} from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
-// =====================================================
-// PANORAMA TERRITORIAL CAMVS - VERSION 7
-// Assemblage et finition graphique
-// =====================================================
-
+// CAMVS - Panorama territorial - assemblage 7.2
+// Les bandeaux sont deja crees par generate.mjs.
+// Aucune mise a l'echelle des pages thematiques.
 const OUT = 'output';
 const ASSETS = 'assets';
-
-const URL =
-  'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
-
-const DEST = path.join(
-  OUT,
-  'Panorama-territorial-Melun-Val-de-Seine.pdf'
-);
-
+const URL = 'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
+const DEST = path.join(OUT, 'Panorama-territorial-Melun-Val-de-Seine.pdf');
 const NAVY = '#041447';
 const RED = '#F24E4C';
 
 await fs.mkdir(OUT, { recursive: true });
 
 const themes = [
-  {
-    name: 'DÉMOGRAPHIE',
-    image: 'population.png',
-    subtitle: 'Population, âge et séniors',
-    color: '#E79995'
-  },
-  {
-    name: 'EMPLOI',
-    image: 'emploi.png',
-    subtitle: 'Activité et conditions de travail',
-    color: '#0D47B3'
-  },
-  {
-    name: 'LOGEMENTS',
-    image: 'logement.png',
-    subtitle: 'Habitat et parc de logements',
-    color: '#3A8BA9'
-  },
-  {
-    name: 'ENTREPRISES',
-    image: 'entreprises.png',
-    subtitle: 'Établissements et tissu économique',
-    color: '#8A6EA9'
-  }
+  { name: 'DÉMOGRAPHIE', image: 'population.png' },
+  { name: 'EMPLOI', image: 'emploi.png' },
+  { name: 'LOGEMENTS', image: 'logement.png' },
+  { name: 'ENTREPRISES', image: 'entreprises.png' }
 ];
 
 const escapeHTML = value => String(value ?? '')
@@ -63,61 +30,38 @@ const escapeHTML = value => String(value ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-const colorRGB = hex => {
-  const value = hex.replace('#', '');
-  return rgb(
-    parseInt(value.slice(0, 2), 16) / 255,
-    parseInt(value.slice(2, 4), 16) / 255,
-    parseInt(value.slice(4, 6), 16) / 255
-  );
-};
+const toData = bytes =>
+  'data:image/png;base64,' + bytes.toString('base64');
 
-async function assetBytes(filename) {
-  return fs.readFile(path.join(ASSETS, filename));
-}
-
-async function assetData(filename) {
-  return 'data:image/png;base64,' +
-    (await assetBytes(filename)).toString('base64');
-}
-
-function imageData(buffer) {
-  return 'data:image/png;base64,' +
-    buffer.toString('base64');
-}
+const imageAsset = async filename =>
+  toData(await fs.readFile(path.join(ASSETS, filename)));
 
 // =====================================================
-// 1. CHARGER LES PDF INDIVIDUELS
+// 1. LIRE ET VERIFIER LES PDF INDIVIDUELS
 // =====================================================
 
 const report = JSON.parse(
-  await fs.readFile(
-    path.join(OUT, 'rapport.json'),
-    'utf8'
-  )
+  await fs.readFile(path.join(OUT, 'rapport.json'), 'utf8')
 );
 
-const successful = report
-  .filter(item => item.status === 'ok')
-  .sort((a, b) => a.number - b.number);
-
 if (
-  successful.length === 0 ||
-  successful.length !== report.length
+  !Array.isArray(report) ||
+  !report.length ||
+  report.some(x => x.status !== 'ok')
 ) {
   throw new Error(
-    'Assemblage impossible : rubriques manquantes.'
+    'Assemblage impossible : certaines rubriques ont echoue.'
   );
 }
 
 const sections = [];
 
-for (const item of successful) {
-  const bytes = await fs.readFile(
-    path.join(OUT, item.file)
+for (const item of [...report].sort(
+  (a, b) => a.number - b.number
+)) {
+  const source = await PDFDocument.load(
+    await fs.readFile(path.join(OUT, item.file))
   );
-
-  const source = await PDFDocument.load(bytes);
 
   sections.push({
     ...item,
@@ -126,43 +70,37 @@ for (const item of successful) {
   });
 }
 
-console.log(
-  `${sections.length} rubriques disponibles`
-);
+console.log(`${sections.length} rubriques disponibles`);
 
 // =====================================================
-// 2. ILLUSTRATIONS
+// 2. ILLUSTRATIONS COUVERTURE ET SOMMAIRE
 // =====================================================
 
-const banner = await assetData(
+const banner = await imageAsset(
   'homepage-datagrid-banner.png'
 );
 
 for (const theme of themes) {
-  theme.data = await assetData(theme.image);
-  theme.bytes = await assetBytes(theme.image);
+  theme.data = await imageAsset(theme.image);
 }
 
-const edition = new Date().toLocaleDateString(
-  'fr-FR',
-  {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'Europe/Paris'
-  }
-);
-
-// =====================================================
-// 3. RECUPERATION DES INDICATEURS HUWISE
-// =====================================================
-
-const browser = await chromium.launch({
-  headless: true
+const edition = new Date().toLocaleDateString('fr-FR', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'Europe/Paris'
 });
+
+// =====================================================
+// 3. CAPTURER LES INDICATEURS CLES HUWISE
+// =====================================================
 
 let statsImage;
 let featuresImage;
 let mapImage;
+
+const browser = await chromium.launch({
+  headless: true
+});
 
 try {
   const context = await browser.newContext({
@@ -170,124 +108,115 @@ try {
       width: 1600,
       height: 1000
     },
-    deviceScaleFactor: 2
+    deviceScaleFactor: 3
   });
 
-  const page = await context.newPage();
+  try {
+    const page = await context.newPage();
 
-  await page.goto(URL, {
-    waitUntil: 'domcontentloaded',
-    timeout: 90000
-  });
+    await page.goto(URL, {
+      waitUntil: 'domcontentloaded',
+      timeout: 90000
+    });
 
-  await page.addStyleTag({
-    content: `
-      ods-manage-cookies-preferences-modal,
-      .ods-manage-cookies-preferences,
-      .modal-backdrop {
-        display:none !important;
-        pointer-events:none !important;
-      }
-    `
-  });
+    await page.addStyleTag({
+      content: `
+        ods-manage-cookies-preferences-modal,
+        .ods-manage-cookies-preferences,
+        .modal-backdrop {
+          display: none !important;
+          pointer-events: none !important;
+        }
+      `
+    });
 
-  const overview = page.locator(
-    'section.panorama-overview'
-  ).first();
+    const overview = page.locator(
+      'section.panorama-overview'
+    ).first();
 
-  await overview.waitFor({
-    state: 'visible',
-    timeout: 30000
-  });
-
-  const stats = overview.locator(
-    '.panorama-overview-stats'
-  ).first();
-
-  const features = overview.locator(
-    '.panorama-overview-features'
-  ).first();
-
-  // On capture directement l'image de la carte,
-  // sans la mention "Cliquer pour agrandir".
-  const map = overview.locator(
-    '.panorama-overview-map img'
-  ).first();
-
-  for (const block of [stats, features, map]) {
-    await block.waitFor({
+    await overview.waitFor({
       state: 'visible',
       timeout: 30000
     });
-  }
 
-  await page.waitForFunction(() => {
-    const img = document.querySelector(
+    const stats = overview.locator(
+      '.panorama-overview-stats'
+    ).first();
+
+    const features = overview.locator(
+      '.panorama-overview-features'
+    ).first();
+
+    // Image de la carte sans "Cliquer pour agrandir".
+    const map = overview.locator(
       '.panorama-overview-map img'
+    ).first();
+
+    for (const item of [stats, features, map]) {
+      await item.waitFor({
+        state: 'visible',
+        timeout: 30000
+      });
+    }
+
+    await page.waitForFunction(() => {
+      const img = document.querySelector(
+        '.panorama-overview-map img'
+      );
+
+      return img &&
+        img.complete &&
+        img.naturalWidth > 0;
+    }, null, {
+      timeout: 30000
+    });
+
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+
+    await page.waitForTimeout(1500);
+
+    const captures = [
+      ['00-indicateurs-chiffres.png', stats],
+      ['00-indicateurs-territoire.png', features],
+      ['00-indicateurs-carte.png', map]
+    ];
+
+    const buffers = [];
+
+    for (const [filename, locator] of captures) {
+      const bytes = await locator.screenshot({
+        type: 'png',
+        animations: 'disabled',
+        timeout: 60000
+      });
+
+      await fs.writeFile(
+        path.join(OUT, filename),
+        bytes
+      );
+
+      buffers.push(bytes);
+    }
+
+    [statsImage, featuresImage, mapImage] =
+      buffers.map(toData);
+
+    console.log(
+      'Indicateurs et carte captures en haute definition'
     );
 
-    return img &&
-      img.complete &&
-      img.naturalWidth > 0;
-  }, null, {
-    timeout: 30000
-  });
-
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-  });
-
-  await page.waitForTimeout(1200);
-
-  const statsBuffer = await stats.screenshot({
-    type: 'png',
-    animations: 'disabled',
-    timeout: 60000
-  });
-
-  const featuresBuffer = await features.screenshot({
-    type: 'png',
-    animations: 'disabled',
-    timeout: 60000
-  });
-
-  const mapBuffer = await map.screenshot({
-    type: 'png',
-    animations: 'disabled',
-    timeout: 60000
-  });
-
-  statsImage = imageData(statsBuffer);
-  featuresImage = imageData(featuresBuffer);
-  mapImage = imageData(mapBuffer);
-
-  await fs.writeFile(
-    path.join(OUT, '00-indicateurs-chiffres.png'),
-    statsBuffer
-  );
-
-  await fs.writeFile(
-    path.join(OUT, '00-indicateurs-territoire.png'),
-    featuresBuffer
-  );
-
-  await fs.writeFile(
-    path.join(OUT, '00-indicateurs-carte.png'),
-    mapBuffer
-  );
-
-  console.log(
-    'Indicateurs et carte captures depuis HUWISE'
-  );
-
-  await context.close();
+  } finally {
+    await context.close();
+  }
 
 } finally {
   await browser.close();
 }
 
 // =====================================================
-// 4. PAGINATION ET SOMMAIRE
+// 4. SOMMAIRE ET PAGINATION DYNAMIQUE
 // =====================================================
 
 let nextPage = 4;
@@ -306,95 +235,94 @@ const tocGroups = themes.map(theme => ({
 })).filter(group => group.entries.length);
 
 // =====================================================
-// 5. STYLES HTML DES PAGES D'INTRODUCTION
+// 5. STYLES DES PAGES INTRODUCTIVES
 // =====================================================
 
 const css = `
   @page {
-    size:A4 landscape;
-    margin:0;
+    size: A4 landscape;
+    margin: 0;
   }
 
   * {
-    box-sizing:border-box;
-    -webkit-print-color-adjust:exact;
-    print-color-adjust:exact;
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
-  html,body {
-    margin:0;
-    padding:0;
-    width:297mm;
-    background:white;
-    font-family:Raleway,Arial,sans-serif;
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 297mm;
+    background: white;
+    font-family: Raleway, Arial, sans-serif;
   }
 
   .page {
-    width:297mm;
-    height:210mm;
-    position:relative;
-    overflow:hidden;
-    break-after:page;
+    position: relative;
+    width: 297mm;
+    height: 210mm;
+    overflow: hidden;
+    break-after: page;
+    page-break-after: always;
   }
 
   .page:last-child {
-    break-after:auto;
+    break-after: auto;
+    page-break-after: auto;
   }
 
   .small-heading {
-    font-size:9pt;
-    font-weight:700;
-    letter-spacing:1px;
-    color:#60708A;
+    font-size: 9pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #60708A;
   }
 
   .accent {
-    width:28mm;
-    height:1.2mm;
-    background:${RED};
+    width: 28mm;
+    height: 1.2mm;
+    background: ${RED};
   }
 
   .intro-footer {
-    position:absolute;
-    bottom:9mm;
-    left:15mm;
-    right:15mm;
-    display:flex;
-    justify-content:space-between;
-    font-size:8pt;
-    color:#64748B;
+    position: absolute;
+    bottom: 9mm;
+    left: 15mm;
+    right: 15mm;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8pt;
+    color: #64748B;
   }
 
   .overview-grid {
-    display:grid;
-    grid-template-columns:
-      minmax(0,30fr)
-      minmax(0,30fr)
-      minmax(0,40fr);
-    gap:4mm;
-    height:142mm;
-    align-items:center;
+    display: grid;
+    grid-template-columns: 30fr 30fr 40fr;
+    gap: 4mm;
+    height: 142mm;
+    align-items: center;
   }
 
   .overview-block {
-    min-width:0;
-    height:100%;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .overview-block img {
-    display:block;
-    max-width:100%;
-    max-height:100%;
-    width:auto;
-    height:auto;
-    object-fit:contain;
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
   }
 
   .overview-map img {
-    max-height:140mm;
+    max-height: 140mm;
   }
 `;
 
@@ -407,7 +335,6 @@ const coverHTML = `
   background:${NAVY};
   color:white;
 ">
-
   <div style="
     position:absolute;
     top:18mm;
@@ -434,7 +361,6 @@ const coverHTML = `
     left:20mm;
     top:53mm;
   ">
-
     <div style="
       font-size:43pt;
       font-weight:800;
@@ -475,13 +401,11 @@ const coverHTML = `
     position:absolute;
     left:20mm;
     bottom:12mm;
-    color:white;
     font-size:11pt;
     font-weight:600;
   ">
     data.melunvaldeseine.fr
   </div>
-
 </div>
 `;
 
@@ -495,7 +419,6 @@ const tocHTML = `
   color:${NAVY};
   padding:15mm 18mm;
 ">
-
   <div class="small-heading">
     PANORAMA TERRITORIAL
   </div>
@@ -517,7 +440,6 @@ const tocHTML = `
     grid-template-columns:1fr 1fr;
     gap:7mm;
   ">
-
     ${tocGroups.map((group, index) => `
       <div style="
         border:1px solid #E0E5ED;
@@ -525,7 +447,6 @@ const tocHTML = `
         overflow:hidden;
         background:#F7F9FC;
       ">
-
         <div style="
           height:19mm;
           background:${NAVY};
@@ -534,7 +455,6 @@ const tocHTML = `
           padding:5mm;
           color:white;
         ">
-
           <img src="${group.data}" style="
             position:absolute;
             right:0;
@@ -551,14 +471,12 @@ const tocHTML = `
             font-size:14pt;
             font-weight:800;
           ">
-            ${String(index + 1).padStart(2,'0')}
+            ${String(index + 1).padStart(2, '0')}
             &nbsp; ${escapeHTML(group.name)}
           </div>
-
         </div>
 
         <div style="padding:4mm 5mm;">
-
           ${group.entries.map(section => `
             <div style="
               display:flex;
@@ -581,23 +499,20 @@ const tocHTML = `
               </strong>
             </div>
           `).join('')}
-
         </div>
       </div>
     `).join('')}
-
   </div>
 
   <div class="intro-footer">
     <span>data.melunvaldeseine.fr</span>
     <span>Sommaire</span>
   </div>
-
 </div>
 `;
 
 // =====================================================
-// 8. INDICATEURS CLES - PAGE 3
+// 8. PAGE DES INDICATEURS CLES
 // =====================================================
 
 const overviewHTML = `
@@ -606,7 +521,6 @@ const overviewHTML = `
   color:${NAVY};
   padding:13mm 15mm;
 ">
-
   <div style="
     display:flex;
     justify-content:space-between;
@@ -638,34 +552,30 @@ const overviewHTML = `
   "></div>
 
   <div class="overview-grid">
-
     <div class="overview-block">
       <img src="${statsImage}"
-           alt="Chiffres clés du territoire">
+        alt="Chiffres clés du territoire">
     </div>
 
     <div class="overview-block">
       <img src="${featuresImage}"
-           alt="Caractéristiques du territoire">
+        alt="Caractéristiques du territoire">
     </div>
 
     <div class="overview-block overview-map">
       <img src="${mapImage}"
-           alt="Carte de Melun Val de Seine">
+        alt="Carte de Melun Val de Seine">
     </div>
-
   </div>
 
   <div class="intro-footer">
     <span>
       Source : data.melunvaldeseine.fr
     </span>
-
     <span>
       Agglomération Melun Val de Seine
     </span>
   </div>
-
 </div>
 `;
 
@@ -685,61 +595,61 @@ try {
     }
   });
 
-  const page = await context.newPage();
+  try {
+    const page = await context.newPage();
 
-  await page.setContent(`
-    <!DOCTYPE html>
-    <html lang="fr">
-      <head>
-        <meta charset="UTF-8">
-        <style>${css}</style>
-      </head>
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html lang="fr">
+        <head>
+          <meta charset="UTF-8">
+          <style>${css}</style>
+        </head>
+        <body>
+          ${coverHTML}
+          ${tocHTML}
+          ${overviewHTML}
+        </body>
+      </html>
+    `, {
+      waitUntil: 'load'
+    });
 
-      <body>
-        ${coverHTML}
-        ${tocHTML}
-        ${overviewHTML}
-      </body>
-    </html>
-  `, {
-    waitUntil: 'load'
-  });
+    await page.evaluate(async () => {
+      await document.fonts.ready;
 
-  await page.evaluate(async () => {
-    await document.fonts.ready;
+      await Promise.all(
+        [...document.images].map(img => img.decode())
+      );
+    });
 
-    await Promise.all(
-      [...document.images].map(img =>
-        img.decode()
-      )
-    );
-  });
+    await page.pdf({
+      path: path.join(OUT, '00-introduction.pdf'),
+      format: 'A4',
+      landscape: true,
+      printBackground: true,
+      preferCSSPageSize: true
+    });
 
-  await page.pdf({
-    path: path.join(OUT, '00-introduction.pdf'),
-    format: 'A4',
-    landscape: true,
-    printBackground: true,
-    preferCSSPageSize: true
-  });
-
-  await context.close();
+  } finally {
+    await context.close();
+  }
 
 } finally {
   await introBrowser.close();
 }
 
 // =====================================================
-// 10. ASSEMBLAGE FINAL ET BANDEAUX THEMATIQUES
+// 10. ASSEMBLAGE SANS REDUCTION DES PAGES
 // =====================================================
 
 const finalPDF = await PDFDocument.create();
 
-const introBytes = await fs.readFile(
-  path.join(OUT, '00-introduction.pdf')
+const introPDF = await PDFDocument.load(
+  await fs.readFile(
+    path.join(OUT, '00-introduction.pdf')
+  )
 );
-
-const introPDF = await PDFDocument.load(introBytes);
 
 if (introPDF.getPageCount() !== 3) {
   throw new Error(
@@ -757,149 +667,34 @@ for (const page of introPages) {
   finalPDF.addPage(page);
 }
 
-const font = await finalPDF.embedFont(
-  StandardFonts.Helvetica
-);
-
-const boldFont = await finalPDF.embedFont(
-  StandardFonts.HelveticaBold
-);
-
-const embeddedImages = new Map();
-
-for (const theme of themes) {
-  embeddedImages.set(
-    theme.name,
-    await finalPDF.embedPng(theme.bytes)
-  );
-}
-
-const seenThemes = new Set();
+// Copier chaque page telle quelle.
+// Aucun bandeau supplementaire.
+// Aucune reduction a 92 %.
 
 for (const section of sections) {
-  const themeName =
-    section.theme.trim().toUpperCase();
-
-  const theme = themes.find(
-    t => t.name === themeName
+  const copied = await finalPDF.copyPages(
+    section.source,
+    section.source.getPageIndices()
   );
 
-  const firstOfTheme =
-    theme && !seenThemes.has(themeName);
-
-  if (firstOfTheme) {
-    seenThemes.add(themeName);
-
-    // Premiere page du chapitre :
-    // conserver le contenu en le reduisant
-    // legerement pour liberer un bandeau superieur.
-
-    const sourcePage = section.source.getPage(0);
-
-    const [embedded] = await finalPDF.embedPages(
-      [sourcePage]
-    );
-
-    const { width, height } =
-      sourcePage.getSize();
-
-    const newPage = finalPDF.addPage([
-      width,
-      height
-    ]);
-
-    const scale = 0.92;
-
-    const scaledWidth = width * scale;
-    const scaledHeight = height * scale;
-
-    newPage.drawPage(embedded, {
-      x: (width - scaledWidth) / 2,
-      y: 9,
-      width: scaledWidth,
-      height: scaledHeight
-    });
-
-    // Bandeau bleu nuit.
-    const bandHeight = 40;
-
-    newPage.drawRectangle({
-      x: 0,
-      y: height - bandHeight,
-      width,
-      height: bandHeight,
-      color: colorRGB(NAVY)
-    });
-
-    // Accent rouge corail.
-    newPage.drawRectangle({
-      x: 0,
-      y: height - bandHeight,
-      width: 5,
-      height: bandHeight,
-      color: colorRGB(RED)
-    });
-
-    newPage.drawText(theme.name, {
-      x: 22,
-      y: height - 25,
-      size: 15,
-      font: boldFont,
-      color: rgb(1, 1, 1)
-    });
-
-    // Illustration lumineuse.
-    const illustration =
-      embeddedImages.get(theme.name);
-
-    const imageWidth = 145;
-    const imageHeight = 38;
-
-    newPage.drawImage(illustration, {
-      x: width - imageWidth,
-      y: height - imageHeight - 1,
-      width: imageWidth,
-      height: imageHeight
-    });
-
-    // Les autres pages de cette rubrique
-    // sont conservees sans modification.
-    if (section.pages > 1) {
-      const indices = Array.from(
-        { length: section.pages - 1 },
-        (_, i) => i + 1
-      );
-
-      const remaining = await finalPDF.copyPages(
-        section.source,
-        indices
-      );
-
-      for (const page of remaining) {
-        finalPDF.addPage(page);
-      }
-    }
-
-    console.log(
-      `Bandeau ajoute : ${theme.name}`
-    );
-
-  } else {
-    // Rubriques suivantes : pages originales.
-    const copied = await finalPDF.copyPages(
-      section.source,
-      section.source.getPageIndices()
-    );
-
-    for (const page of copied) {
-      finalPDF.addPage(page);
-    }
+  for (const page of copied) {
+    finalPDF.addPage(page);
   }
+
+  console.log(
+    `Ajout sans reduction : ` +
+    `${section.theme} / ${section.section} ` +
+    `(${section.pages} page(s))`
+  );
 }
 
 // =====================================================
 // 11. PAGINATION CONTINUE
 // =====================================================
+
+const font = await finalPDF.embedFont(
+  StandardFonts.Helvetica
+);
 
 const pages = finalPDF.getPages();
 const total = pages.length;
@@ -908,9 +703,7 @@ for (let index = 2; index < total; index++) {
   const page = pages[index];
   const { width } = page.getSize();
 
-  const label = `${index + 1} / ${total}`;
-
-  page.drawText(label, {
+  page.drawText(`${index + 1} / ${total}`, {
     x: width - 75,
     y: 12,
     size: 8,
@@ -940,10 +733,7 @@ await fs.writeFile(
   await finalPDF.save()
 );
 
-console.log(
-  `PDF complet cree : ${DEST}`
-);
-
+console.log(`PDF complet cree : ${DEST}`);
 console.log(
   `${sections.length} rubriques - ${total} pages`
 );
