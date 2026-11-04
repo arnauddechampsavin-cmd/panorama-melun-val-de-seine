@@ -210,218 +210,239 @@ async function waitForVisuals(page) {
 
 
 
+
 async function printSection(page, file) {
 
-  // Appliquer les styles specifiques au PDF
-  await page.addStyleTag({
-    content: `
-      @media print {
+  // 1. Identifier la rubrique actuellement affichee
+  const section = page.locator(
+    '.content-area .content-section:visible'
+  ).first();
 
-        @page {
-          size: A4 landscape;
-          margin: 8mm;
-        }
+  await section.waitFor({ state: 'visible' });
 
-        /* Masquer les elements inutiles */
+  const title = await section.locator(
+    '.section-title'
+  ).first().innerText();
 
-        .ods-front-header,
-        .ods-front-footer,
-        header[role="banner"],
-        footer,
-        .navbar,
-        .sidebar-nav,
-        .sticky-content,
-        .scroll-indicator,
-        .panorama-export-pdf,
-        .no-print,
-        .header,
-        .home {
-          display: none !important;
-        }
+  const source = await section.locator(
+    '.kpi-description'
+  ).first().innerText().catch(() => '');
 
-        /* Mise en page pleine largeur */
+  const themeClass = await section.getAttribute('class');
 
-        .conteneur,
-        .indicateurs,
-        .main-content-wrapper,
-        .content-area {
-          display: block !important;
-          width: 100% !important;
-          max-width: none !important;
-          min-width: 0 !important;
-          height: auto !important;
-          min-height: 0 !important;
-          overflow: visible !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
+  let themeColor = '#015ca2';
 
-        .content-area {
-          background: #ffffff !important;
-          font-size: 9.5pt !important;
-          line-height: 1.35 !important;
-        }
+  if (themeClass.includes('theme-demographie'))
+    themeColor = '#e79995';
 
-        /* Supprimer les effets ecran */
+  if (themeClass.includes('theme-emploi'))
+    themeColor = '#0d47b3';
 
-        .content-section,
-        .content-section * {
-          animation: none !important;
-          transition: none !important;
-        }
+  if (themeClass.includes('theme-logement'))
+    themeColor = '#3a8ba9';
 
-        /* En-tete institutionnel */
+  if (themeClass.includes('theme-entreprises'))
+    themeColor = '#8a6ea9';
 
-        .panorama-print-header {
-          display: block !important;
-          margin-bottom: 4mm !important;
-          padding-bottom: 3mm !important;
-          border-bottom: 2px solid #015ca2;
-          break-after: avoid;
-        }
+  // 2. Recuperer les blocs dans leur ordre d'affichage
+  const blocks = section.locator(
+    '.cards-grid, .chart-section, .map-section'
+  );
 
-        .panorama-print-brand {
-          font-size: 8pt !important;
-          color: #015ca2 !important;
-        }
+  const count = await blocks.count();
+  const elements = [];
 
-        .panorama-print-name {
-          font-size: 14pt !important;
-          margin-bottom: 2mm !important;
-        }
+  for (let i = 0; i < count; i++) {
 
-        .panorama-print-location {
-          font-size: 9pt !important;
-        }
+    const block = blocks.nth(i);
 
-        /* Titre de rubrique */
+    // Ignorer les blocs imbriques deja captures
+    const nested = await block.evaluate(el => {
+      return !!el.parentElement.closest(
+        '.cards-grid, .chart-section, .map-section'
+      );
+    });
 
-        .panorama-export-header {
-          display: block !important;
-          margin: 0 0 3mm !important;
-          padding: 0 0 2mm !important;
-          break-after: avoid;
-        }
+    if (nested) continue;
 
-        .panorama-export-header .section-title {
-          font-size: 17pt !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
+    const box = await block.boundingBox();
 
-        .kpi-description {
-          font-size: 8.5pt !important;
-          margin-bottom: 3mm !important;
-        }
+    if (!box || box.height < 5) continue;
 
-        /* Indicateurs et textes */
+    // Capturer le bloc tel qu'il apparait sur le site
+    await block.scrollIntoViewIfNeeded();
 
-        .content-area .cards-grid {
-          display: grid !important;
-          grid-template-columns:
-            repeat(2, minmax(0, 1fr)) !important;
-          gap: 3mm !important;
-          margin: 0 0 3mm !important;
-          width: 100% !important;
-        }
+    await page.waitForTimeout(350);
 
-        .content-area .cards-grid .card {
-          padding: 3mm !important;
-          min-height: 0 !important;
-          height: auto !important;
-          width: 100% !important;
-          box-shadow: none !important;
-          border: 1px solid #e2e8f0 !important;
-          break-inside: avoid;
-        }
+    const image = await block.screenshot({
+      type: 'png',
+      animations: 'disabled',
+      timeout: 30000
+    });
 
-        .content-area .card__title {
-          font-size: 9pt !important;
-        }
+    elements.push({
+      image: image.toString('base64'),
+      width: box.width,
+      height: box.height
+    });
+  }
 
-        .content-area .kpi-title {
-          font-size: 19pt !important;
-          margin: 2mm 0 !important;
-        }
+  console.log(
+    `${title} : ${elements.length} blocs captures`
+  );
 
-        .content-area .card_textpano {
-          font-size: 9pt !important;
-          line-height: 1.3 !important;
-          padding: 2mm !important;
-        }
+  // 3. Construire un document independant
+  const escapeHTML = value => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
-        /* Graphiques */
+  const content = elements.map((element, index) => `
+    <div class="pdf-block">
+      <img
+        src="data:image/png;base64,${element.image}"
+        alt="Bloc ${index + 1}"
+      >
+    </div>
+  `).join('');
 
-        .content-area .chart-section {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 3mm 0 !important;
-          padding: 3mm !important;
-          border: 1px solid #e2e8f0 !important;
-          box-shadow: none !important;
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
+  const html = `
+  <!DOCTYPE html>
+  <html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <style>
 
-        .content-area .chart-section h4 {
-          font-size: 11pt !important;
-          margin: 0 0 3mm !important;
-        }
-
-        /* Cartes */
-
-        .content-area .map-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 auto !important;
-        }
-
-        /* Limiter les debordements */
-
-        .content-area ods-chart,
-        .content-area ods-map,
-        .content-area .odswidget-chart,
-        .content-area .odswidget-map {
-          max-width: 100% !important;
-          break-inside: avoid;
-        }
-
-        .content-area .highcharts-container,
-        .content-area .highcharts-root {
-          max-width: 100% !important;
-        }
-
-        /* Eviter les coupures */
-
-        .content-area .card,
-        .content-area .chart-section,
-        .content-area .map-container {
-          break-inside: avoid;
-          page-break-inside: avoid;
-        }
-
-        /* Conserver les couleurs */
-
-        * {
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
+      @page {
+        size: A4 landscape;
+        margin: 12mm;
       }
-    `
-  });
 
-  // Stabiliser le rendu avant impression
-  await page.waitForTimeout(1000);
+      * {
+        box-sizing: border-box;
+      }
 
-  await page.pdf({
-    path: file,
-    format: 'A4',
-    landscape: true,
-    printBackground: true,
-    preferCSSPageSize: true
-  });
+      html, body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        color: #142e7b;
+        background: white;
+      }
+
+      .pdf-heading {
+        margin-bottom: 7mm;
+        padding-bottom: 4mm;
+        border-bottom: 2px solid ${themeColor};
+        break-after: avoid;
+      }
+
+      .pdf-brand {
+        font-size: 9pt;
+        font-weight: 600;
+        color: #015ca2;
+        letter-spacing: 0.5px;
+        margin-bottom: 3mm;
+      }
+
+      h1 {
+        font-size: 20pt;
+        line-height: 1.2;
+        margin: 0 0 3mm;
+        color: #142e7b;
+      }
+
+      .pdf-source {
+        font-size: 9pt;
+        font-style: italic;
+        color: #64748b;
+      }
+
+      .pdf-block {
+        width: 100%;
+        margin: 0 0 4mm;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .pdf-block img {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 170mm;
+        object-fit: contain;
+        object-position: top center;
+      }
+
+      .pdf-footer {
+        font-size: 8pt;
+        color: #64748b;
+        margin-top: 6mm;
+      }
+
+    </style>
+  </head>
+  <body>
+
+    <div class="pdf-heading">
+      <div class="pdf-brand">
+        AGGLOMERATION MELUN VAL DE SEINE
+      </div>
+
+      <h1>${escapeHTML(title)}</h1>
+
+      <div class="pdf-source">
+        ${escapeHTML(source)}
+      </div>
+    </div>
+
+    ${content}
+
+    <div class="pdf-footer">
+      data.melunvaldeseine.fr
+    </div>
+
+  </body>
+  </html>
+  `;
+
+  // 4. Ouvrir une page temporaire pour le PDF
+  const pdfPage = await page.context().newPage();
+
+  try {
+
+    await pdfPage.setContent(html, {
+      waitUntil: 'load'
+    });
+
+    await pdfPage.evaluate(async () => {
+      await document.fonts.ready;
+
+      await Promise.all(
+        [...document.images].map(img =>
+          img.decode().catch(() => {})
+        )
+      );
+    });
+
+    await pdfPage.pdf({
+      path: file,
+      format: 'A4',
+      landscape: true,
+      printBackground: true,
+      preferCSSPageSize: true
+    });
+
+  } finally {
+    await pdfPage.close();
+  }
+
+  console.log(`PDF finalise : ${file}`);
 }
-
 
 
 try {
