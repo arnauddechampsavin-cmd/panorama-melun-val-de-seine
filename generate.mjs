@@ -337,7 +337,7 @@ async function printSection(page, file) {
         const image = await block.screenshot({
           type: 'png',
           animations: 'disabled',
-          scale: 'css',
+          scale: 'device',
           timeout: 30000
         });
 
