@@ -437,39 +437,122 @@ async function printSection(page, file) {
     return renderVisual(element);
   };
 
-  const contentParts = [];
+  
+  // VERSION 5C - Composition editoriale
 
-  for (let i = 0; i < elements.length; i++) {
+  const renderVisual = element => `
+    <div class="pdf-visual">
+      <img
+        src="data:image/png;base64,${element.image}"
+        alt="Visualisation territoriale"
+      >
+    </div>
+  `;
 
-    const current = elements[i];
-    const next = elements[i + 1];
-
-    // Deux graphiques assez larges peuvent
-    // etre places sur une meme ligne.
-    // Les graphiques hauts restent pleine largeur.
-
-    if (
-      current.type === 'visual' &&
-      next?.type === 'visual' &&
-      current.ratio >= 1.3 &&
-      next.ratio >= 1.3
-    ) {
-
-      contentParts.push(`
-        <div class="pdf-visual-grid">
-          ${renderVisual(current)}
-          ${renderVisual(next)}
+  const renderElement = element => {
+    if (element.type === 'cards') {
+      return `
+        <div class="pdf-cards">
+          ${element.cards.map(card => `
+            <div class="pdf-card">
+              ${card.html}
+            </div>
+          `).join('')}
         </div>
-      `);
-
-      i++;
-      continue;
+      `;
     }
 
-    contentParts.push(renderElement(current));
+    if (element.type === 'text') {
+      return `
+        <div class="pdf-text">
+          ${element.html}
+        </div>
+      `;
+    }
+
+    return renderVisual(element);
+  };
+
+  const information = elements.filter(
+    el => el.type === 'cards' || el.type === 'text'
+  );
+
+  const visuals = elements.filter(
+    el => el.type === 'visual'
+  );
+
+  // Calculer la forme des visualisations
+  const ratio = el =>
+    el.ratio ||
+    (el.width && el.height
+      ? el.width / el.height
+      : 1);
+
+  const contentParts = [];
+
+  // Gabarit A : informations et deux visualisations
+  if (information.length && visuals.length === 2) {
+
+    contentParts.push(`
+      <div class="pdf-layout-a">
+        <div class="pdf-layout-a-info">
+          ${information.map(renderElement).join('')}
+        </div>
+        <div class="pdf-layout-a-visuals">
+          ${visuals.map(renderVisual).join('')}
+        </div>
+      </div>
+    `);
+
+  // Gabarit B : informations et un graphique
+  } else if (information.length && visuals.length === 1) {
+
+    contentParts.push(`
+      <div class="pdf-layout-b">
+        <div class="pdf-layout-b-info">
+          ${information.map(renderElement).join('')}
+        </div>
+        <div class="pdf-layout-b-chart">
+          ${renderVisual(visuals[0])}
+        </div>
+      </div>
+    `);
+
+  // Gabarit C : visualisations complexes
+  } else {
+
+    contentParts.push(
+      information.map(renderElement).join('')
+    );
+
+    for (let i = 0; i < visuals.length; i++) {
+      const current = visuals[i];
+      const next = visuals[i + 1];
+
+      if (
+        next &&
+        ratio(current) >= 1.4 &&
+        ratio(next) >= 1.4
+      ) {
+        contentParts.push(`
+          <div class="pdf-layout-pair">
+            ${renderVisual(current)}
+            ${renderVisual(next)}
+          </div>
+        `);
+        i++;
+      } else {
+        contentParts.push(`
+          <div class="pdf-layout-full">
+            ${renderVisual(current)}
+          </div>
+        `);
+      }
+    }
   }
 
   const content = contentParts.join('');
+
 
 
   const html = `
@@ -660,6 +743,149 @@ async function printSection(page, file) {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
+
+/* =========================================
+   PANORAMA PDF - VERSION 5C
+   ========================================= */
+
+@page {
+  size: A4 landscape;
+  margin: 10mm;
+}
+
+body {
+  font-family: Raleway, Arial, sans-serif;
+  color: #041447;
+  background: #ffffff;
+}
+
+/* Titres et identification */
+
+.pdf-heading {
+  border-bottom: 2px solid #F24E4C;
+  padding-bottom: 3mm;
+  margin-bottom: 5mm;
+  break-after: avoid;
+}
+
+.pdf-brand {
+  color: #041447;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+}
+
+/* Gabarit A */
+
+.pdf-layout-a {
+  display: grid;
+  grid-template-columns: 40% minmax(0, 1fr);
+  gap: 5mm;
+  align-items: start;
+}
+
+.pdf-layout-a-info {
+  min-width: 0;
+}
+
+.pdf-layout-a-info .pdf-cards {
+  grid-template-columns: 1fr;
+}
+
+.pdf-layout-a-visuals {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4mm;
+}
+
+/* Gabarit B */
+
+.pdf-layout-b {
+  display: grid;
+  grid-template-columns: 35% minmax(0, 1fr);
+  gap: 6mm;
+  align-items: start;
+}
+
+.pdf-layout-b-info,
+.pdf-layout-b-chart {
+  min-width: 0;
+}
+
+.pdf-layout-b-info .pdf-cards {
+  grid-template-columns: 1fr;
+}
+
+/* Gabarit C */
+
+.pdf-layout-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5mm;
+  align-items: start;
+}
+
+.pdf-layout-full {
+  width: 100%;
+}
+
+/* Visualisations */
+
+.pdf-layout-a .pdf-visual,
+.pdf-layout-b .pdf-visual,
+.pdf-layout-pair .pdf-visual,
+.pdf-layout-full .pdf-visual {
+  margin: 0 0 4mm;
+  min-width: 0;
+  break-inside: avoid;
+}
+
+.pdf-layout-a .pdf-visual img,
+.pdf-layout-b .pdf-visual img,
+.pdf-layout-pair .pdf-visual img,
+.pdf-layout-full .pdf-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 155mm;
+  object-fit: contain;
+  object-position: top center;
+}
+
+/* Cartes de chiffres */
+
+.pdf-card {
+  background: #F6F8FB;
+  border: 1px solid #E0E5ED;
+  border-radius: 2mm;
+  padding: 3mm;
+  margin-bottom: 2mm;
+  break-inside: avoid;
+}
+
+.pdf-cards {
+  gap: 3mm;
+}
+
+.pdf-card .kpi-title {
+  color: #041447;
+  font-size: 20pt;
+  font-weight: 700;
+}
+
+/* Impression */
+
+.pdf-visual,
+.pdf-card {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+* {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
 
     </style>
   </head>
