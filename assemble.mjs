@@ -9,9 +9,8 @@ import {
 } from 'pdf-lib';
 
 // =====================================================
-// PANORAMA TERRITORIAL CAMVS - VERSION 7.6
-// Couverture datagrid, vague institutionnelle,
-// virgule traversante et logos couleur.
+// PANORAMA TERRITORIAL CAMVS - VERSION 7.6.2
+// Couverture institutionnelle corrigee
 // =====================================================
 
 const OUT = 'output';
@@ -123,17 +122,17 @@ const banner = await imageAsset(
   'homepage-datagrid-banner.png'
 );
 
-// Logos blancs pour la derniere page.
+// Logos blancs conserves pour la derniere page.
 const logoData = await imageAsset('logo-data.png');
 const logoCAMVS = await imageAsset('logo-camvs.png');
 
-// Logos couleur pour la couverture.
+// Logos couleur de la nouvelle couverture.
 const logoDataCouleur = await imageAsset(
   'logo-data-couleur.png'
 );
 
 const logoCAMVSCouleur = await imageAsset(
-  'logo-camvs-couleur.png'
+  'logo-camvs-couleur-2.png'
 );
 
 const logoUE = await imageAsset('logo-ue.png');
@@ -280,11 +279,11 @@ try {
 // 5. PAGINATION ET SOMMAIRE
 // =====================================================
 
-// 1 couverture
-// 2 avant-propos
-// 3 sommaire
-// 4 indicateurs cles
-// 5 premiere sous-thematique
+// Page 1 : couverture
+// Page 2 : avant-propos
+// Page 3 : sommaire
+// Page 4 : indicateurs cles
+// Page 5 : premiere sous-thematique
 
 let nextPage = 5;
 
@@ -363,7 +362,7 @@ const css = `
     color: #64748B;
   }
 
-  /* LOGOS */
+  /* LOGOS DE LA QUATRIEME DE COUVERTURE */
 
   .logos {
     display: flex;
@@ -473,9 +472,8 @@ const css = `
 `;
 
 // =====================================================
-// 7. NOUVELLE COUVERTURE - VERSION 7.6
+// 7. COUVERTURE VERSION 7.6.2
 // =====================================================
-
 
 const coverHTML = `
 <div class="page" style="
@@ -485,7 +483,7 @@ const coverHTML = `
   overflow:hidden;
 ">
 
-  <!-- FOND DATA-GRID -->
+  <!-- DATA-GRID PLEINE PAGE -->
 
   <img src="${banner}" style="
     position:absolute;
@@ -497,7 +495,7 @@ const coverHTML = `
     z-index:0;
   ">
 
-  <!-- DEGRADE POUR LE TEXTE -->
+  <!-- DEGRADE DE LISIBILITE -->
 
   <div style="
     position:absolute;
@@ -512,7 +510,7 @@ const coverHTML = `
     );
   "></div>
 
-  <!-- IDENTITE ET DATE -->
+  <!-- IDENTITE INSTITUTIONNELLE -->
 
   <div style="
     position:absolute;
@@ -526,6 +524,8 @@ const coverHTML = `
   ">
     AGGLOMÉRATION MELUN VAL DE SEINE
   </div>
+
+  <!-- DATE AUTOMATIQUE -->
 
   <div style="
     position:absolute;
@@ -553,7 +553,7 @@ const coverHTML = `
       font-weight:800;
       line-height:1.02;
       letter-spacing:-1.5px;
-      color:white;
+      color:#FFFFFF;
       text-shadow:0 3px 15px rgba(0,0,0,0.15);
     ">
       Panorama<br>
@@ -578,7 +578,7 @@ const coverHTML = `
 
   </div>
 
-  <!-- BANDEAU COURBE ET VIRGULE FINE -->
+  <!-- BANDEAU BLANC COURBE ET VIRGULE FINE -->
 
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -608,7 +608,7 @@ const coverHTML = `
       fill="#FFFFFF"
     />
 
-    <!-- VIRGULE BLEU NUIT FINE -->
+    <!-- VIRGULE BLEU NUIT -->
 
     <path
       d="
@@ -623,54 +623,66 @@ const coverHTML = `
 
   </svg>
 
-  <!-- LOGO PLATEFORME : BAS GAUCHE -->
+  <!-- LOGOS PARTENAIRES : UE PUIS DATA -->
 
   <div style="
     position:absolute;
-    left:20mm;
-    bottom:5mm;
-    width:62mm;
-    height:17mm;
+    left:19mm;
+    bottom:6mm;
+    width:133mm;
+    height:24mm;
     z-index:4;
     display:flex;
     align-items:center;
     justify-content:flex-start;
+    gap:13mm;
   ">
 
-    <img src="${logoDataCouleur}" style="
-      display:block;
-      width:100%;
-      max-height:17mm;
-      object-fit:contain;
-      object-position:left center;
+    <!-- UNION EUROPEENNE -->
+
+    <div style="
+      width:49mm;
+      height:23mm;
+      flex:0 0 49mm;
+      display:flex;
+      align-items:center;
+      justify-content:center;
     ">
+
+      <img src="${logoUE}" style="
+        display:block;
+        width:100%;
+        height:100%;
+        object-fit:contain;
+        object-position:center center;
+      ">
+
+    </div>
+
+    <!-- PLATEFORME DATA -->
+
+    <div style="
+      width:49mm;
+      height:23mm;
+      flex:0 0 49mm;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    ">
+
+      <img src="${logoDataCouleur}" style="
+        display:block;
+        width:100%;
+        height:100%;
+        object-fit:contain;
+        object-position:center center;
+      ">
+
+    </div>
 
   </div>
 
-  <!-- LOGO UNION EUROPEENNE -->
-
-  <div style="
-    position:absolute;
-    left:104mm;
-    bottom:5mm;
-    width:43mm;
-    height:18mm;
-    z-index:4;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-  ">
-
-    <img src="${logoUE}" style="
-      display:block;
-      width:100%;
-      max-height:18mm;
-      object-fit:contain;
-    ">
-
-  </div>
-
-  <!-- LOGO CAMVS A DROITE -->
+  <!-- LOGO CAMVS A DROITE DE LA VIRGULE -->
 
   <div style="
     position:absolute;
@@ -687,15 +699,15 @@ const coverHTML = `
     <img src="${logoCAMVSCouleur}" style="
       display:block;
       width:100%;
-      max-height:25mm;
+      height:100%;
       object-fit:contain;
+      object-position:center center;
     ">
 
   </div>
 
 </div>
 `;
-
 
 // =====================================================
 // 8. AVANT-PROPOS
@@ -797,7 +809,7 @@ const preambleHTML = `
 `;
 
 // =====================================================
-// 9. SOMMAIRE
+// 9. SOMMAIRE ILLUSTRE
 // =====================================================
 
 const tocHTML = `
@@ -920,6 +932,7 @@ const overviewHTML = `
     justify-content:space-between;
     align-items:center;
   ">
+
     <div class="small-heading">
       PANORAMA TERRITORIAL
     </div>
@@ -975,7 +988,7 @@ const overviewHTML = `
 // 11. QUATRIEME DE COUVERTURE
 // =====================================================
 
-// Conservee comme dans la version 7.5.
+// Conservee a l'identique.
 
 const backCoverHTML = `
 <div class="page" style="
@@ -1273,8 +1286,6 @@ for (const section of sections) {
     color: pdfColor(RED)
   });
 
-  // Helvetica standard ne prend pas en charge
-  // les accents : texte ASCII pour ce bandeau.
   newPage.drawText(
     'DEMOGRAPHIE / Population',
     {
