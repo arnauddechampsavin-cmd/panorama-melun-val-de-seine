@@ -9,8 +9,8 @@ import {
 } from 'pdf-lib';
 
 // =====================================================
-// PANORAMA TERRITORIAL CAMVS - VERSION 7.6.2
-// Couverture institutionnelle corrigee
+// PANORAMA TERRITORIAL CAMVS - VERSION 7.6.3
+// Correction definitive du positionnement des logos
 // =====================================================
 
 const OUT = 'output';
@@ -71,7 +71,7 @@ function pdfColor(hex) {
 }
 
 // =====================================================
-// 2. CHARGEMENT DES PDF INDIVIDUELS
+// 2. CHARGER LES PDF INDIVIDUELS
 // =====================================================
 
 const report = JSON.parse(
@@ -115,18 +115,18 @@ console.log(
 );
 
 // =====================================================
-// 3. ILLUSTRATIONS ET LOGOS
+// 3. CHARGEMENT DES ILLUSTRATIONS ET LOGOS
 // =====================================================
 
 const banner = await imageAsset(
   'homepage-datagrid-banner.png'
 );
 
-// Logos blancs conserves pour la derniere page.
+// Logos blancs pour la quatrieme de couverture.
 const logoData = await imageAsset('logo-data.png');
 const logoCAMVS = await imageAsset('logo-camvs.png');
 
-// Logos couleur de la nouvelle couverture.
+// Logos couleur pour la premiere de couverture.
 const logoDataCouleur = await imageAsset(
   'logo-data-couleur.png'
 );
@@ -151,7 +151,7 @@ const edition = new Date().toLocaleDateString(
 );
 
 // =====================================================
-// 4. CAPTURE DES INDICATEURS CLES HUWISE
+// 4. CAPTURE DES INDICATEURS CLES
 // =====================================================
 
 let statsImage;
@@ -276,14 +276,8 @@ try {
 }
 
 // =====================================================
-// 5. PAGINATION ET SOMMAIRE
+// 5. PAGINATION AUTOMATIQUE
 // =====================================================
-
-// Page 1 : couverture
-// Page 2 : avant-propos
-// Page 3 : sommaire
-// Page 4 : indicateurs cles
-// Page 5 : premiere sous-thematique
 
 let nextPage = 5;
 
@@ -362,7 +356,7 @@ const css = `
     color: #64748B;
   }
 
-  /* LOGOS DE LA QUATRIEME DE COUVERTURE */
+  /* LOGOS DE LA DERNIERE PAGE */
 
   .logos {
     display: flex;
@@ -472,7 +466,7 @@ const css = `
 `;
 
 // =====================================================
-// 7. COUVERTURE VERSION 7.6.2
+// 7. COUVERTURE VERSION 7.6.3
 // =====================================================
 
 const coverHTML = `
@@ -538,7 +532,7 @@ const coverHTML = `
     ${escapeHTML(edition)}
   </div>
 
-  <!-- TITRE PRINCIPAL -->
+  <!-- GRAND TITRE -->
 
   <div style="
     position:absolute;
@@ -553,7 +547,7 @@ const coverHTML = `
       font-weight:800;
       line-height:1.02;
       letter-spacing:-1.5px;
-      color:#FFFFFF;
+      color:white;
       text-shadow:0 3px 15px rgba(0,0,0,0.15);
     ">
       Panorama<br>
@@ -578,7 +572,7 @@ const coverHTML = `
 
   </div>
 
-  <!-- BANDEAU BLANC COURBE ET VIRGULE FINE -->
+  <!-- BANDEAU BLANC ET VIRGULE -->
 
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -594,8 +588,6 @@ const coverHTML = `
     "
   >
 
-    <!-- COURBE BLANCHE -->
-
     <path
       d="
         M 0 705
@@ -607,8 +599,6 @@ const coverHTML = `
       "
       fill="#FFFFFF"
     />
-
-    <!-- VIRGULE BLEU NUIT -->
 
     <path
       d="
@@ -623,27 +613,38 @@ const coverHTML = `
 
   </svg>
 
-  <!-- LOGOS PARTENAIRES : UE PUIS DATA -->
+  <!-- ======================================= -->
+  <!-- LOGOS PARTENAIRES : ALIGNEMENT CORRIGE -->
+  <!-- ======================================= -->
+
+  <!--
+    Les deux logos sont volontairement petits.
+    Ils occupent une zone de 12 mm de hauteur,
+    placee a 2.5 mm du bord inferieur.
+
+    Le premier commence a 18 mm du bord gauche,
+    exactement comme le titre principal.
+  -->
 
   <div style="
     position:absolute;
-    left:19mm;
-    bottom:6mm;
-    width:133mm;
-    height:24mm;
+    left:18mm;
+    bottom:2.5mm;
     z-index:4;
     display:flex;
+    flex-direction:row;
     align-items:center;
     justify-content:flex-start;
-    gap:13mm;
+    gap:9mm;
+    height:12mm;
   ">
 
     <!-- UNION EUROPEENNE -->
 
     <div style="
-      width:49mm;
-      height:23mm;
-      flex:0 0 49mm;
+      width:30mm;
+      height:12mm;
+      flex:0 0 30mm;
       display:flex;
       align-items:center;
       justify-content:center;
@@ -662,9 +663,9 @@ const coverHTML = `
     <!-- PLATEFORME DATA -->
 
     <div style="
-      width:49mm;
-      height:23mm;
-      flex:0 0 49mm;
+      width:36mm;
+      height:12mm;
+      flex:0 0 36mm;
       display:flex;
       align-items:center;
       justify-content:center;
@@ -682,7 +683,7 @@ const coverHTML = `
 
   </div>
 
-  <!-- LOGO CAMVS A DROITE DE LA VIRGULE -->
+  <!-- LOGO CAMVS : INCHANGE -->
 
   <div style="
     position:absolute;
@@ -988,8 +989,6 @@ const overviewHTML = `
 // 11. QUATRIEME DE COUVERTURE
 // =====================================================
 
-// Conservee a l'identique.
-
 const backCoverHTML = `
 <div class="page" style="
   background:${NAVY};
@@ -1241,7 +1240,6 @@ for (const section of sections) {
     continue;
   }
 
-  // Premiere page Population intacte.
   const [firstPage] = await finalPDF.copyPages(
     section.source,
     [0]
@@ -1249,7 +1247,6 @@ for (const section of sections) {
 
   finalPDF.addPage(firstPage);
 
-  // Deuxieme page Population avec en-tete.
   const sourcePage = section.source.getPage(1);
 
   const [embedded] = await finalPDF.embedPages(
