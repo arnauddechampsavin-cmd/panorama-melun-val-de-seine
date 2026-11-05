@@ -2,18 +2,34 @@
 name: Generation du panorama territorial
 
 on:
+  # Lancement manuel depuis GitHub Actions
   workflow_dispatch:
 
+  # Generation mensuelle : le 1er a 6 h (Paris)
+  schedule:
+    - cron: '0 6 1 * *'
+      timezone: 'Europe/Paris'
+
+# Autoriser la publication dans GitHub Releases
 permissions:
-  contents: read
+  contents: write
+
+# Eviter deux publications simultanees
+concurrency:
+  group: panorama-publication
+  cancel-in-progress: false
 
 jobs:
   generate:
-    name: Generer les PDF
+    name: Generer et publier le panorama
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
+      # =========================================
+      # 1. PREPARATION
+      # =========================================
+
       - name: Recuperer le code
         uses: actions/checkout@v4
 
@@ -30,13 +46,138 @@ jobs:
       - name: Installer Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Generer les PDF
+      # =========================================
+      # 2. GENERATION DES PDF
+      # =========================================
+
+      - name: Generer les 13 rubriques
         run: npm run generate
 
       - name: Assembler le panorama complet
         run: node assemble.mjs
 
-      - name: Conserver les PDF generes
+      # =========================================
+      # 3. CONTROLE QUALITE
+      # =========================================
+
+      - name: Verifier les PDF avant publication
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs/promises';
+          import path from 'node:path';
+          import { PDFDocument } from 'pdf-lib';
+
+          const OUT = 'output';
+
+          const report = JSON.parse(
+            await fs.readFile(
+              path.join(OUT, 'rapport.json'),
+              'utf8'
+            )
+          );
+
+          if (!Array.isArray(report) || report.length !== 13) {
+            throw new Error(
+              'Le rapport ne contient pas 13 rubriques.'
+            );
+          }
+
+          if (report.some(item => item.status !== 'ok')) {
+            throw new Error(
+              'Au moins une rubrique a echoue.'
+            );
+          }
+
+          const numbers = report.map(item => item.number);
+          if (
+            new Set(numbers).size !== 13 ||
+            numbers.some(n => !Number.isInteger(n) || n < 1 || n > 13)
+          ) {
+            throw new Error(
+              'Numerotation des rubriques incorrecte.'
+            );
+          }
+
+          let thematicPages = 0;
+
+          for (const item of report) {
+            const file = path.join(OUT, item.file);
+            const bytes = await fs.readFile(file);
+            const pdf = await PDFDocument.load(bytes);
+
+            if (pdf.getPageCount() < 1) {
+              throw new Error(
+                'PDF vide : ' + item.file
+              );
+            }
+
+            thematicPages += pdf.getPageCount();
+          }
+
+          const finalPath = path.join(
+            OUT,
+            'Panorama-territorial-Melun-Val-de-Seine.pdf'
+          );
+
+          const finalBytes = await fs.readFile(finalPath);
+          const finalPDF = await PDFDocument.load(finalBytes);
+
+          // 4 pages initiales + rubriques + 1 couverture finale
+          const expectedPages = thematicPages + 5;
+
+          if (finalPDF.getPageCount() !== expectedPages) {
+            throw new Error(
+              'Pagination incorrecte : ' +
+              finalPDF.getPageCount() +
+              ' pages obtenues, ' +
+              expectedPages +
+              ' attendues.'
+            );
+          }
+
+          if (finalBytes.length < 100000) {
+            throw new Error(
+              'Le PDF final semble anormalement petit.'
+            );
+          }
+
+          console.log(
+            'Validation reussie : 13 rubriques, ' +
+            finalPDF.getPageCount() +
+            ' pages, ' +
+            (finalBytes.length / 1048576).toFixed(2) +
+            ' Mo.'
+          );
+          EOF
+
+      # =========================================
+      # 4. PUBLICATION DE LA DERNIERE EDITION
+      # =========================================
+
+      - name: Publier le PDF mensuel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PDF="output/Panorama-territorial-Melun-Val-de-Seine.pdf"
+          TAG="panorama-mensuel"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Mise a jour de la publication existante"
+            gh release upload "$TAG" "$PDF" --clobber
+          else
+            echo "Creation de la premiere publication"
+            gh release create "$TAG" "$PDF" \
+              --title "Panorama territorial - Edition mensuelle" \
+              --notes "Panorama territorial de l'Agglomeration Melun Val de Seine, genere automatiquement depuis data.melunvaldeseine.fr."
+          fi
+
+          echo "PDF publie avec succes."
+
+      # =========================================
+      # 5. ARCHIVAGE DES RESULTATS
+      # =========================================
+
+      - name: Conserver les PDF et diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
