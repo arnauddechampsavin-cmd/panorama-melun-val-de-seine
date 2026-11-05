@@ -9,8 +9,8 @@ import {
 } from 'pdf-lib';
 
 // =====================================================
-// PANORAMA TERRITORIAL CAMVS - VERSION 7.6.3
-// Correction definitive du positionnement des logos
+// PANORAMA TERRITORIAL CAMVS - VERSION 7.6.4
+// Logo CAMVS centre sur la quatrieme de couverture
 // =====================================================
 
 const OUT = 'output';
@@ -358,12 +358,6 @@ const css = `
 
   /* LOGOS DE LA DERNIERE PAGE */
 
-  .logos {
-    display: flex;
-    align-items: center;
-    gap: 9mm;
-  }
-
   .logo-data {
     width: 48mm;
     height: 17mm;
@@ -466,7 +460,7 @@ const css = `
 `;
 
 // =====================================================
-// 7. COUVERTURE VERSION 7.6.3
+// 7. COUVERTURE VERSION 7.6.3 (INCHANGEE)
 // =====================================================
 
 const coverHTML = `
@@ -477,8 +471,6 @@ const coverHTML = `
   overflow:hidden;
 ">
 
-  <!-- DATA-GRID PLEINE PAGE -->
-
   <img src="${banner}" style="
     position:absolute;
     inset:0;
@@ -488,8 +480,6 @@ const coverHTML = `
     object-position:center center;
     z-index:0;
   ">
-
-  <!-- DEGRADE DE LISIBILITE -->
 
   <div style="
     position:absolute;
@@ -504,8 +494,6 @@ const coverHTML = `
     );
   "></div>
 
-  <!-- IDENTITE INSTITUTIONNELLE -->
-
   <div style="
     position:absolute;
     top:11mm;
@@ -519,8 +507,6 @@ const coverHTML = `
     AGGLOMÉRATION MELUN VAL DE SEINE
   </div>
 
-  <!-- DATE AUTOMATIQUE -->
-
   <div style="
     position:absolute;
     top:11mm;
@@ -531,8 +517,6 @@ const coverHTML = `
   ">
     ${escapeHTML(edition)}
   </div>
-
-  <!-- GRAND TITRE -->
 
   <div style="
     position:absolute;
@@ -613,18 +597,7 @@ const coverHTML = `
 
   </svg>
 
-  <!-- ======================================= -->
-  <!-- LOGOS PARTENAIRES : ALIGNEMENT CORRIGE -->
-  <!-- ======================================= -->
-
-  <!--
-    Les deux logos sont volontairement petits.
-    Ils occupent une zone de 12 mm de hauteur,
-    placee a 2.5 mm du bord inferieur.
-
-    Le premier commence a 18 mm du bord gauche,
-    exactement comme le titre principal.
-  -->
+  <!-- LOGOS PARTENAIRES -->
 
   <div style="
     position:absolute;
@@ -655,7 +628,6 @@ const coverHTML = `
         width:100%;
         height:100%;
         object-fit:contain;
-        object-position:center center;
       ">
 
     </div>
@@ -676,14 +648,13 @@ const coverHTML = `
         width:100%;
         height:100%;
         object-fit:contain;
-        object-position:center center;
       ">
 
     </div>
 
   </div>
 
-  <!-- LOGO CAMVS : INCHANGE -->
+  <!-- LOGO CAMVS -->
 
   <div style="
     position:absolute;
@@ -702,7 +673,6 @@ const coverHTML = `
       width:100%;
       height:100%;
       object-fit:contain;
-      object-position:center center;
     ">
 
   </div>
@@ -986,7 +956,7 @@ const overviewHTML = `
 `;
 
 // =====================================================
-// 11. QUATRIEME DE COUVERTURE
+// 11. QUATRIEME DE COUVERTURE - VERSION 7.6.4
 // =====================================================
 
 const backCoverHTML = `
@@ -1072,25 +1042,56 @@ const backCoverHTML = `
     ">
   </div>
 
+  <!--
+    TROIS LOGOS REPARTIS SUR TOUTE LA LARGEUR
+    Data a gauche, CAMVS au centre, UE a droite.
+  -->
+
   <div style="
     position:absolute;
     left:18mm;
     right:18mm;
     bottom:14mm;
-    display:flex;
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr;
     align-items:center;
-    justify-content:space-between;
+    z-index:3;
   ">
-    <img src="${logoData}" class="logo-data">
 
-    <div class="logos">
+    <!-- LOGO DATA : GAUCHE -->
+
+    <div style="
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+    ">
+      <img src="${logoData}" class="logo-data">
+    </div>
+
+    <!-- LOGO CAMVS : CENTRE EXACT -->
+
+    <div style="
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    ">
       <img src="${logoCAMVS}" class="logo-camvs">
+    </div>
 
+    <!-- LOGO UNION EUROPEENNE : DROITE -->
+
+    <div style="
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+    ">
       <div class="logo-ue-panel">
         <img src="${logoUE}" class="logo-ue">
       </div>
     </div>
+
   </div>
+
 </div>
 `;
 
