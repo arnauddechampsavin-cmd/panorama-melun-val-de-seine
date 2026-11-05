@@ -476,6 +476,7 @@ const css = `
 // 7. NOUVELLE COUVERTURE - VERSION 7.6
 // =====================================================
 
+
 const coverHTML = `
 <div class="page" style="
   position:relative;
@@ -484,7 +485,7 @@ const coverHTML = `
   overflow:hidden;
 ">
 
-  <!-- DATA-GRID SUR TOUTE LA COUVERTURE -->
+  <!-- FOND DATA-GRID -->
 
   <img src="${banner}" style="
     position:absolute;
@@ -496,7 +497,7 @@ const coverHTML = `
     z-index:0;
   ">
 
-  <!-- DEGRADE DE LISIBILITE -->
+  <!-- DEGRADE POUR LE TEXTE -->
 
   <div style="
     position:absolute;
@@ -511,7 +512,7 @@ const coverHTML = `
     );
   "></div>
 
-  <!-- IDENTITE INSTITUTIONNELLE -->
+  <!-- IDENTITE ET DATE -->
 
   <div style="
     position:absolute;
@@ -526,8 +527,6 @@ const coverHTML = `
     AGGLOMÉRATION MELUN VAL DE SEINE
   </div>
 
-  <!-- DATE AUTOMATIQUE -->
-
   <div style="
     position:absolute;
     top:11mm;
@@ -539,7 +538,7 @@ const coverHTML = `
     ${escapeHTML(edition)}
   </div>
 
-  <!-- TITRE GRAND FORMAT -->
+  <!-- TITRE PRINCIPAL -->
 
   <div style="
     position:absolute;
@@ -554,7 +553,7 @@ const coverHTML = `
       font-weight:800;
       line-height:1.02;
       letter-spacing:-1.5px;
-      color:#FFFFFF;
+      color:white;
       text-shadow:0 3px 15px rgba(0,0,0,0.15);
     ">
       Panorama<br>
@@ -579,13 +578,7 @@ const coverHTML = `
 
   </div>
 
-  <!--
-    BANDEAU BLANC :
-    plus bas a gauche, plus haut a droite.
-
-    Le dessin utilise un SVG sur toute la page
-    afin de garantir des courbes vectorielles.
-  -->
+  <!-- BANDEAU COURBE ET VIRGULE FINE -->
 
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -601,7 +594,7 @@ const coverHTML = `
     "
   >
 
-    <!-- VAGUE BLANCHE -->
+    <!-- COURBE BLANCHE -->
 
     <path
       d="
@@ -615,20 +608,14 @@ const coverHTML = `
       fill="#FFFFFF"
     />
 
-    <!--
-      VIRGULE BLEU NUIT TRAVERSANTE
-
-      Elle part dans la zone bleue au-dessus
-      de la vague et descend hors du document.
-      Les extremites sont donc invisibles.
-    -->
+    <!-- VIRGULE BLEU NUIT FINE -->
 
     <path
       d="
-        M 795 626
-        C 778 679, 760 740, 717 824
-        L 733 824
-        C 787 747, 806 681, 812 626
+        M 810 645
+        C 803 689, 786 748, 758 810
+        L 768 810
+        C 801 748, 814 690, 814 645
         Z
       "
       fill="#041447"
@@ -636,16 +623,14 @@ const coverHTML = `
 
   </svg>
 
-  <!-- LOGOS SUR LE BANDEAU BLANC -->
-
-  <!-- PLATEFORME DATA -->
+  <!-- LOGO PLATEFORME : BAS GAUCHE -->
 
   <div style="
     position:absolute;
     left:20mm;
-    bottom:9mm;
-    width:75mm;
-    height:27mm;
+    bottom:5mm;
+    width:62mm;
+    height:17mm;
     z-index:4;
     display:flex;
     align-items:center;
@@ -655,21 +640,21 @@ const coverHTML = `
     <img src="${logoDataCouleur}" style="
       display:block;
       width:100%;
-      max-height:27mm;
+      max-height:17mm;
       object-fit:contain;
       object-position:left center;
     ">
 
   </div>
 
-  <!-- COFINANCEMENT UNION EUROPEENNE -->
+  <!-- LOGO UNION EUROPEENNE -->
 
   <div style="
     position:absolute;
-    left:103mm;
-    bottom:9mm;
-    width:63mm;
-    height:27mm;
+    left:104mm;
+    bottom:5mm;
+    width:43mm;
+    height:18mm;
     z-index:4;
     display:flex;
     align-items:center;
@@ -679,20 +664,20 @@ const coverHTML = `
     <img src="${logoUE}" style="
       display:block;
       width:100%;
-      max-height:27mm;
+      max-height:18mm;
       object-fit:contain;
     ">
 
   </div>
 
-  <!-- LOGO CAMVS A DROITE DE LA VIRGULE -->
+  <!-- LOGO CAMVS A DROITE -->
 
   <div style="
     position:absolute;
-    right:13mm;
+    right:15mm;
     bottom:9mm;
-    width:69mm;
-    height:34mm;
+    width:57mm;
+    height:25mm;
     z-index:4;
     display:flex;
     align-items:center;
@@ -702,7 +687,7 @@ const coverHTML = `
     <img src="${logoCAMVSCouleur}" style="
       display:block;
       width:100%;
-      max-height:34mm;
+      max-height:25mm;
       object-fit:contain;
     ">
 
@@ -710,6 +695,7 @@ const coverHTML = `
 
 </div>
 `;
+
 
 // =====================================================
 // 8. AVANT-PROPOS
