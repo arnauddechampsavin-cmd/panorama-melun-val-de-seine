@@ -5,8 +5,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // =====================================================
-// PANORAMA TERRITORIAL - CAMVS
-// VERSION 7.2 - ILLUSTRATIONS ET GRAPHIQUES HD
+// PANORAMA TERRITORIAL - MELUN VAL DE SEINE
+// VERSION 7.3 - PAGINATION ET VISUALISATIONS HD
 // =====================================================
 
 const URL =
@@ -18,6 +18,12 @@ const TIMEOUT = 60000;
 
 const NAVY = '#041447';
 const RED = '#F24E4C';
+
+await fs.mkdir(OUT, { recursive: true });
+
+// =====================================================
+// CONFIGURATION DES THEMATIQUES
+// =====================================================
 
 const THEMES = [
   {
@@ -46,7 +52,37 @@ const THEMES = [
   }
 ];
 
-await fs.mkdir(OUT, { recursive: true });
+// =====================================================
+// CONFIGURATION DES GABARITS
+// =====================================================
+
+// Le gabarit est choisi selon l'identifiant
+// AngularJS de chaque sous-thematique.
+//
+// compact : indicateurs a gauche, visuels a droite
+// standard : indicateurs et visuels en colonnes
+// full : indicateurs puis visuels pleine largeur
+// detail : premier visuel avec les indicateurs,
+//          second visuel sur une page dediee
+
+const LAYOUTS = {
+  'population': 'detail',
+  'territoire-jeune': 'compact',
+  'population-senior': 'compact',
+
+  'population-active': 'compact',
+  'emploi-offre': 'compact',
+  'emploi-taux': 'standard',
+  'emploi-conditions': 'compact',
+
+  'categories-logements': 'compact',
+  'logements-individuels': 'standard',
+  'statut-occupation': 'compact',
+  'periodes-construction': 'standard',
+
+  'repartition-commune': 'compact',
+  'filtre-entreprises': 'full'
+};
 
 const browser = await chromium.launch({
   headless: true
@@ -55,24 +91,12 @@ const browser = await chromium.launch({
 const report = [];
 const illustrations = new Map();
 
-for (const theme of THEMES) {
-  const buffer = await fs.readFile(
-    path.join(ASSETS, theme.image)
-  );
-
-  illustrations.set(
-    theme.key,
-    'data:image/png;base64,' +
-    buffer.toString('base64')
-  );
-}
-
 // =====================================================
-// UTILITAIRES
+// 1. UTILITAIRES
 // =====================================================
 
 function slug(value) {
-  return String(value)
+  return String(value ?? '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
@@ -94,14 +118,29 @@ function getTheme(name) {
   const normalized = slug(name);
 
   return THEMES.find(theme =>
-    normalized.includes(theme.key)
-  ) || THEMES.find(theme =>
-    normalized === slug(theme.name)
+    normalized === theme.key
+  ) || null;
+}
+
+function getLayout(submenuId) {
+  return LAYOUTS[submenuId] || 'compact';
+}
+
+// Charger les quatre illustrations.
+for (const theme of THEMES) {
+  const bytes = await fs.readFile(
+    path.join(ASSETS, theme.image)
+  );
+
+  illustrations.set(
+    theme.key,
+    'data:image/png;base64,' +
+      bytes.toString('base64')
   );
 }
 
 // =====================================================
-// 1. OUVERTURE HUWISE
+// 2. OUVERTURE DE LA PAGE HUWISE
 // =====================================================
 
 async function preparePage() {
@@ -126,13 +165,14 @@ async function preparePage() {
     state: 'attached'
   });
 
+  // Neutralisation de la fenetre de cookies.
   await page.addStyleTag({
     content: `
       ods-manage-cookies-preferences-modal,
       .ods-manage-cookies-preferences,
       .modal-backdrop {
-        display:none !important;
-        pointer-events:none !important;
+        display: none !important;
+        pointer-events: none !important;
       }
     `
   });
@@ -141,7 +181,7 @@ async function preparePage() {
 }
 
 // =====================================================
-// 2. NAVIGATION ANGULARJS
+// 3. NAVIGATION ANGULARJS
 // =====================================================
 
 async function selectSection(
@@ -149,17 +189,17 @@ async function selectSection(
   groupIndex,
   itemIndex
 ) {
-  const group = page.locator(
-    '.sidebar-nav .cl-dropdown'
-  ).nth(groupIndex);
+  const group = page
+    .locator('.sidebar-nav .cl-dropdown')
+    .nth(groupIndex);
 
   const button = group.locator(
     '.cl-dropdown-button'
   );
 
-  const item = group.locator(
-    '.cl-dropdown-item'
-  ).nth(itemIndex);
+  const item = group
+    .locator('.cl-dropdown-item')
+    .nth(itemIndex);
 
   const ngClick = await item.getAttribute(
     'ng-click'
@@ -179,24 +219,27 @@ async function selectSection(
 
   console.log(`Selection : ${submenuId}`);
 
-  const sectionVisible = () =>
-    page.evaluate(expected =>
-      [...document.querySelectorAll(
-        '.content-area .content-section'
-      )].some(section =>
+  const sectionVisible = async () => {
+    return page.evaluate(expected => {
+      return [
+        ...document.querySelectorAll(
+          '.content-area .content-section'
+        )
+      ].some(section =>
         (section.getAttribute('ng-if') || '')
           .includes(expected) &&
         section.getBoundingClientRect().height > 0
-      ),
-      submenuId
-    );
+      );
+    }, submenuId);
+  };
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (await sectionVisible()) {
       console.log(
         `Section affichee : ${submenuId}`
       );
-      return;
+
+      return submenuId;
     }
 
     console.log(
@@ -232,23 +275,25 @@ async function selectSection(
     });
 
     try {
-      await page.waitForFunction(expected =>
-        [...document.querySelectorAll(
-          '.content-area .content-section'
-        )].some(section =>
+      await page.waitForFunction(expected => {
+        return [
+          ...document.querySelectorAll(
+            '.content-area .content-section'
+          )
+        ].some(section =>
           (section.getAttribute('ng-if') || '')
             .includes(expected) &&
           section.getBoundingClientRect().height > 0
-        ),
-        submenuId,
-        { timeout: 8000 }
-      );
+        );
+      }, submenuId, {
+        timeout: 8000
+      });
 
       console.log(
         `Section affichee : ${submenuId}`
       );
 
-      return;
+      return submenuId;
 
     } catch {
       console.warn(
@@ -265,7 +310,7 @@ async function selectSection(
 }
 
 // =====================================================
-// 3. CHARGEMENT DES VISUALISATIONS
+// 4. CHARGEMENT DES VISUALISATIONS
 // =====================================================
 
 async function waitForVisuals(page) {
@@ -282,6 +327,7 @@ async function waitForVisuals(page) {
     await document.fonts.ready;
   });
 
+  // Parcourir les graphiques et les cartes.
   await page.evaluate(async () => {
     const elements = [
       ...document.querySelectorAll(
@@ -304,6 +350,7 @@ async function waitForVisuals(page) {
 
   await section.scrollIntoViewIfNeeded();
 
+  // Attendre le chargement des images.
   await page.evaluate(async () => {
     await Promise.all(
       [...document.images].map(img => {
@@ -328,6 +375,7 @@ async function waitForVisuals(page) {
     );
   });
 
+  // Attendre les graphiques Highcharts.
   await page.waitForFunction(() => {
     const charts = document.querySelectorAll(
       '.content-section ods-chart'
@@ -352,55 +400,20 @@ async function waitForVisuals(page) {
 }
 
 // =====================================================
-// 4. GENERATION D'UNE SOUS-THEMATIQUE
+// 5. EXTRACTION DES BLOCS
 // =====================================================
 
-async function printSection(
-  page,
-  file,
-  theme,
-  firstOfTheme
-) {
-  const section = page.locator(
-    '.content-area .content-section:visible'
-  ).first();
-
-  await section.waitFor({
-    state: 'visible'
-  });
-
-  const title = await section.locator(
-    '.section-title'
-  ).first().innerText();
-
-  const source = await section.locator(
-    '.kpi-description'
-  ).first().innerText().catch(() => '');
-
-  const themeColor = theme?.color || '#015CA2';
-
-  const isSenior =
-    /population s[eé]nior/i.test(title);
-
-  const isActive =
-    /population active et inactive/i.test(title);
-
-  const isCompact = isSenior || isActive;
-
-  const specialEnterprise =
-    /formes juridiques|familles d.activit/i
-      .test(title);
-
-  // -------------------------------------------------
-  // EXTRACTION DES BLOCS
-  // -------------------------------------------------
-
+async function extractElements(page, section, title) {
   const blocks = section.locator(
     '.cards-grid, .chart-section, .map-section'
   );
 
   const elements = [];
   const count = await blocks.count();
+
+  const specialEnterprise =
+    /formes juridiques|familles d.activit/i
+      .test(title);
 
   for (let i = 0; i < count; i++) {
     const block = blocks.nth(i);
@@ -436,6 +449,7 @@ async function printSection(
           type: 'cards',
           cards
         });
+
       } else {
         elements.push({
           type: 'text',
@@ -468,15 +482,15 @@ async function printSection(
     }
   }
 
-  console.log(
-    `${title} : ${elements.length} blocs prepares`
-  );
+  return elements;
+}
 
-  // -------------------------------------------------
-  // CONSTRUCTION DES CONTENUS
-  // -------------------------------------------------
+// =====================================================
+// 6. GENERATION DU HTML
+// =====================================================
 
-  const renderCards = element => `
+function renderCards(element) {
+  return `
     <div class="pdf-cards">
       ${element.cards.map(card => `
         <div class="pdf-card ${
@@ -489,13 +503,22 @@ async function printSection(
       `).join('')}
     </div>
   `;
+}
 
-  const renderInfo = element =>
-    element.type === 'cards'
-      ? renderCards(element)
-      : `<div class="pdf-text">${element.html}</div>`;
+function renderInformation(element) {
+  if (element.type === 'cards') {
+    return renderCards(element);
+  }
 
-  const renderVisual = element => `
+  return `
+    <div class="pdf-text">
+      ${element.html}
+    </div>
+  `;
+}
+
+function renderVisual(element) {
+  return `
     <figure class="pdf-visual">
       <img
         src="data:image/png;base64,${element.image}"
@@ -503,7 +526,13 @@ async function printSection(
       >
     </figure>
   `;
+}
 
+// =====================================================
+// 7. COMPOSITION DES GABARITS
+// =====================================================
+
+function composeContent(elements, layout) {
   const information = elements.filter(el =>
     el.type === 'cards' || el.type === 'text'
   );
@@ -513,101 +542,120 @@ async function printSection(
   );
 
   const infoHTML = information
-    .map(renderInfo)
+    .map(renderInformation)
     .join('');
 
-  // Les visualisations sont conservees
-  // dans leur ordre d'origine.
-  //
-  // Un visuel detaille utilise toute la largeur.
-  // Les deux colonnes sont reservees aux
-  // contenus plus simples.
+  // -----------------------------------------------
+  // GABARIT COMPACT
+  // -----------------------------------------------
 
-  const complexVisual = visuals.some(el =>
-    el.ratio < 1.15 ||
-    el.height > 750
-  );
-
-  let content = '';
-
-  if (
-    information.length &&
-    visuals.length === 1 &&
-    !complexVisual
-  ) {
-    content = `
-      <div class="pdf-layout-side">
-        <div class="pdf-side-info">
-          ${infoHTML}
-        </div>
-        <div class="pdf-side-visual">
-          ${renderVisual(visuals[0])}
-        </div>
-      </div>
-    `;
-
-  } else if (
-    information.length &&
-    visuals.length === 2 &&
-    !complexVisual &&
-    !isCompact
-  ) {
-    // Informations et premier visuel en haut.
-    // Deuxieme visuel sur toute la largeur.
-    content = `
-      <div class="pdf-layout-top">
-        <div class="pdf-top-info">
-          ${infoHTML}
-        </div>
-        <div class="pdf-top-visual">
-          ${renderVisual(visuals[0])}
-        </div>
-      </div>
-
-      <div class="pdf-visual-wide">
-        ${renderVisual(visuals[1])}
-      </div>
-    `;
-
-  } else if (
-    isCompact &&
-    information.length &&
-    visuals.length
-  ) {
-    // Conserver la compacite des rubriques
-    // Population senior et Active / inactive.
-    content = `
+  if (layout === 'compact') {
+    return `
       <div class="pdf-layout-compact">
+
         <div class="pdf-compact-info">
           ${infoHTML}
         </div>
+
         <div class="pdf-compact-visuals">
           ${visuals.map(renderVisual).join('')}
         </div>
-      </div>
-    `;
 
-  } else {
-    // Graphiques complexes : pleine largeur.
-    content = `
-      <div class="pdf-info-full">
-        ${infoHTML}
-      </div>
-
-      <div class="pdf-visuals-full">
-        ${visuals.map(element => `
-          <div class="pdf-visual-wide">
-            ${renderVisual(element)}
-          </div>
-        `).join('')}
       </div>
     `;
   }
 
-  // -------------------------------------------------
-  // EN-TETE THEMATIQUE
-  // -------------------------------------------------
+  // -----------------------------------------------
+  // GABARIT STANDARD
+  // -----------------------------------------------
 
+  if (layout === 'standard') {
+    return `
+      <div class="pdf-layout-standard">
+
+        <div class="pdf-standard-info">
+          ${infoHTML}
+        </div>
+
+        <div class="pdf-standard-visuals">
+          ${visuals.map(renderVisual).join('')}
+        </div>
+
+      </div>
+    `;
+  }
+
+  // -----------------------------------------------
+  // GABARIT DETAIL
+  // -----------------------------------------------
+
+  if (layout === 'detail') {
+    if (visuals.length >= 2) {
+      return `
+        <div class="pdf-layout-detail">
+
+          <div class="pdf-detail-top">
+            <div class="pdf-detail-info">
+              ${infoHTML}
+            </div>
+
+            <div class="pdf-detail-map">
+              ${renderVisual(visuals[0])}
+            </div>
+          </div>
+
+          <div class="pdf-detail-chart">
+            ${renderVisual(visuals[1])}
+          </div>
+
+          ${visuals.slice(2).map(renderVisual).join('')}
+
+        </div>
+      `;
+    }
+
+    // Repli pour les rubriques sans deux visuels.
+    return `
+      <div class="pdf-layout-standard">
+        <div class="pdf-standard-info">
+          ${infoHTML}
+        </div>
+        <div class="pdf-standard-visuals">
+          ${visuals.map(renderVisual).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // -----------------------------------------------
+  // GABARIT PLEINE LARGEUR
+  // -----------------------------------------------
+
+  return `
+    <div class="pdf-layout-full">
+
+      <div class="pdf-full-info">
+        ${infoHTML}
+      </div>
+
+      <div class="pdf-full-visuals">
+        ${visuals.map(renderVisual).join('')}
+      </div>
+
+    </div>
+  `;
+}
+
+// =====================================================
+// 8. EN-TETE THEMATIQUE
+// =====================================================
+
+function renderHeader(
+  theme,
+  firstOfTheme,
+  title,
+  source
+) {
   const illustration = theme
     ? illustrations.get(theme.key)
     : null;
@@ -616,10 +664,12 @@ async function printSection(
     firstOfTheme && theme && illustration
       ? `
         <div class="pdf-theme-banner">
+
           <div class="pdf-theme-label">
             <div class="pdf-theme-small">
               PANORAMA TERRITORIAL
             </div>
+
             <div class="pdf-theme-name">
               ${escapeHTML(theme.name)}
             </div>
@@ -627,332 +677,22 @@ async function printSection(
 
           <img
             src="${illustration}"
-            alt=""
             class="pdf-theme-image"
+            alt=""
           >
+
         </div>
       `
       : `
         <div class="pdf-small-header">
           <span>PANORAMA TERRITORIAL</span>
-          <span>${escapeHTML(
-            theme?.name || ''
-          )}</span>
+          <span>
+            ${escapeHTML(theme?.name || '')}
+          </span>
         </div>
       `;
 
-  // -------------------------------------------------
-  // HTML ET CSS
-  // -------------------------------------------------
-
-  const html = `
-  <!DOCTYPE html>
-  <html lang="fr">
-  <head>
-    <meta charset="UTF-8">
-
-    <style>
-      @page {
-        size: A4 landscape;
-        margin: 9mm;
-      }
-
-      * {
-        box-sizing: border-box;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-
-      html, body {
-        margin: 0;
-        padding: 0;
-      }
-
-      body {
-        font-family: Raleway, Arial, sans-serif;
-        color: ${NAVY};
-        background: white;
-        font-size: 9.5pt;
-        line-height: 1.35;
-      }
-
-      /* EN-TETE THEMATIQUE */
-
-      .pdf-theme-banner {
-        position: relative;
-        height: 28mm;
-        background: ${NAVY};
-        color: white;
-        overflow: hidden;
-        margin-bottom: 5mm;
-        break-after: avoid;
-      }
-
-      .pdf-theme-label {
-        position: absolute;
-        top: 5mm;
-        left: 7mm;
-        z-index: 2;
-      }
-
-      .pdf-theme-small {
-        font-size: 7.5pt;
-        color: #B8D4F3;
-        letter-spacing: 1px;
-        margin-bottom: 3mm;
-      }
-
-      .pdf-theme-name {
-        font-size: 20pt;
-        font-weight: 800;
-        line-height: 1.1;
-      }
-
-      .pdf-theme-image {
-        position: absolute;
-        right: 0;
-        top: 0;
-        width: 43%;
-        height: 100%;
-        object-fit: cover;
-        object-position: center;
-      }
-
-      .pdf-small-header {
-        display: flex;
-        justify-content: space-between;
-        color: ${NAVY};
-        font-size: 8pt;
-        font-weight: 700;
-        letter-spacing: .5px;
-        margin-bottom: 4mm;
-      }
-
-      .pdf-heading {
-        border-bottom: 2px solid ${RED};
-        margin-bottom: 4mm;
-        padding-bottom: 2mm;
-        break-after: avoid;
-      }
-
-      h1 {
-        color: ${NAVY};
-        font-size: 18pt;
-        margin: 0 0 2mm;
-        line-height: 1.15;
-      }
-
-      .pdf-source {
-        color: #64748B;
-        font-size: 8pt;
-        font-style: italic;
-      }
-
-      /* INDICATEURS */
-
-      .pdf-cards {
-        display: grid;
-        grid-template-columns:
-          repeat(2, minmax(0, 1fr));
-        gap: 2.5mm;
-        margin-bottom: 3mm;
-        align-items: start;
-      }
-
-      .pdf-card {
-        min-width: 0;
-        padding: 2.5mm 3mm;
-        background: #F6F8FB;
-        border: 1px solid #E0E5ED;
-        border-radius: 2mm;
-        break-inside: avoid;
-      }
-
-      .pdf-card-long {
-        grid-column: 1 / -1;
-      }
-
-      .pdf-card .card__title {
-        color: #64748B;
-        font-size: 9pt;
-        margin: 0 0 1mm;
-      }
-
-      .pdf-card .kpi-title {
-        color: ${themeColor};
-        font-size: 19pt;
-        font-weight: 700;
-        margin: 1mm 0;
-      }
-
-      .pdf-card .description {
-        color: #64748B;
-        font-size: 8.5pt;
-      }
-
-      .pdf-card .card_textpano {
-        color: #475569;
-        font-size: 9pt;
-        line-height: 1.35;
-        margin: 0;
-        padding: 0;
-      }
-
-      .pdf-card p {
-        margin: 1mm 0;
-      }
-
-      .pdf-text {
-        margin-bottom: 3mm;
-        font-size: 9pt;
-        line-height: 1.35;
-      }
-
-      /* VISUALISATIONS HD */
-
-      .pdf-visual {
-        margin: 0;
-        padding: 0;
-        min-width: 0;
-        break-inside: avoid;
-      }
-
-      .pdf-visual img {
-        display: block;
-        width: 100%;
-        height: auto;
-        max-height: 165mm;
-        object-fit: contain;
-        object-position: top center;
-      }
-
-      /* GABARIT : INDICATEURS + VISUEL */
-
-      .pdf-layout-side {
-        display: grid;
-        grid-template-columns:
-          38% minmax(0, 1fr);
-        gap: 5mm;
-        align-items: start;
-      }
-
-      .pdf-side-info,
-      .pdf-side-visual {
-        min-width: 0;
-      }
-
-      .pdf-side-visual img {
-        max-height: 155mm;
-      }
-
-      /* GABARIT : PARTIE HAUTE */
-
-      .pdf-layout-top {
-        display: grid;
-        grid-template-columns:
-          40% minmax(0, 1fr);
-        gap: 5mm;
-        align-items: start;
-        margin-bottom: 4mm;
-      }
-
-      .pdf-top-info,
-      .pdf-top-visual {
-        min-width: 0;
-      }
-
-      .pdf-top-visual img {
-        max-height: 100mm;
-      }
-
-      /* GRAPHIQUE PLEINE LARGEUR */
-
-      .pdf-visual-wide {
-        width: 100%;
-        margin: 3mm 0 5mm;
-        break-inside: avoid;
-      }
-
-      .pdf-visual-wide img {
-        width: 100%;
-        max-height: 155mm;
-      }
-
-      /* GABARIT COMPACT */
-
-      .pdf-layout-compact {
-        display: grid;
-        grid-template-columns:
-          46% minmax(0, 1fr);
-        gap: 4mm;
-        align-items: start;
-      }
-
-      .pdf-compact-info,
-      .pdf-compact-visuals {
-        min-width: 0;
-      }
-
-      .pdf-compact-info .pdf-cards {
-        gap: 2mm;
-        margin-bottom: 2mm;
-      }
-
-      .pdf-compact-info .pdf-card {
-        padding: 2mm;
-      }
-
-      .pdf-compact-info .kpi-title {
-        font-size: 17pt;
-      }
-
-      .pdf-compact-info .card_textpano {
-        font-size: 8.5pt;
-      }
-
-      .pdf-compact-visuals {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 3mm;
-      }
-
-      .pdf-compact-visuals img {
-        max-height: 83mm;
-      }
-
-      /* GABARIT PLEINE LARGEUR */
-
-      .pdf-info-full {
-        width: 100%;
-        margin-bottom: 3mm;
-      }
-
-      .pdf-info-full .pdf-cards {
-        grid-template-columns:
-          repeat(3, minmax(0, 1fr));
-      }
-
-      .pdf-info-full .pdf-card-long {
-        grid-column: 1 / -1;
-      }
-
-      /* PAGINATION */
-
-      .pdf-card,
-      .pdf-visual,
-      .pdf-theme-banner {
-        page-break-inside: avoid;
-        break-inside: avoid;
-      }
-
-      img {
-        max-width: 100%;
-      }
-
-    </style>
-  </head>
-
-  <body>
+  return `
     ${themeHeader}
 
     <div class="pdf-heading">
@@ -962,15 +702,429 @@ async function printSection(
         ${escapeHTML(source)}
       </div>
     </div>
-
-    ${content}
-  </body>
-  </html>
   `;
+}
 
-  // -------------------------------------------------
-  // IMPRESSION PDF
-  // -------------------------------------------------
+// =====================================================
+// 9. STYLES DES PDF
+// =====================================================
+
+function getCSS(themeColor) {
+  return `
+    @page {
+      size: A4 landscape;
+      margin: 9mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: Raleway, Arial, sans-serif;
+      color: ${NAVY};
+      background: white;
+      font-size: 9.5pt;
+      line-height: 1.35;
+    }
+
+    /* =========================================
+       EN-TETES
+       ========================================= */
+
+    .pdf-theme-banner {
+      position: relative;
+      height: 25mm;
+      background: ${NAVY};
+      color: white;
+      overflow: hidden;
+      margin-bottom: 4mm;
+      break-after: avoid;
+    }
+
+    .pdf-theme-label {
+      position: absolute;
+      top: 5mm;
+      left: 7mm;
+      z-index: 2;
+    }
+
+    .pdf-theme-small {
+      font-size: 7pt;
+      color: #B8D4F3;
+      letter-spacing: 1px;
+      margin-bottom: 2mm;
+    }
+
+    .pdf-theme-name {
+      font-size: 19pt;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .pdf-theme-image {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 43%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .pdf-small-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: .5px;
+      margin-bottom: 3mm;
+    }
+
+    .pdf-heading {
+      border-bottom: 2px solid ${RED};
+      padding-bottom: 2mm;
+      margin-bottom: 3mm;
+      break-after: avoid;
+    }
+
+    h1 {
+      font-size: 17pt;
+      color: ${NAVY};
+      line-height: 1.15;
+      margin: 0 0 1.5mm;
+    }
+
+    .pdf-source {
+      color: #64748B;
+      font-size: 8pt;
+      font-style: italic;
+    }
+
+    /* =========================================
+       CARTES D'INDICATEURS
+       ========================================= */
+
+    .pdf-cards {
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 2mm;
+      margin-bottom: 2mm;
+      align-items: start;
+    }
+
+    .pdf-card {
+      min-width: 0;
+      padding: 2mm 2.5mm;
+      background: #F6F8FB;
+      border: 1px solid #E0E5ED;
+      border-radius: 2mm;
+      break-inside: avoid;
+    }
+
+    .pdf-card-long {
+      grid-column: 1 / -1;
+    }
+
+    .pdf-card .card__title {
+      color: #64748B;
+      font-size: 8.5pt;
+      margin: 0 0 1mm;
+    }
+
+    .pdf-card .kpi-title {
+      color: ${themeColor};
+      font-size: 18pt;
+      font-weight: 700;
+      margin: 1mm 0;
+    }
+
+    .pdf-card .description {
+      color: #64748B;
+      font-size: 8pt;
+    }
+
+    .pdf-card .card_textpano {
+      color: #475569;
+      font-size: 8.5pt;
+      line-height: 1.3;
+      margin: 0;
+      padding: 0;
+    }
+
+    .pdf-card p {
+      margin: .5mm 0;
+    }
+
+    .pdf-text {
+      margin-bottom: 2mm;
+      font-size: 9pt;
+      line-height: 1.35;
+    }
+
+    /* =========================================
+       VISUALISATIONS
+       ========================================= */
+
+    .pdf-visual {
+      margin: 0;
+      padding: 0;
+      min-width: 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .pdf-visual img {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 155mm;
+      object-fit: contain;
+      object-position: top center;
+    }
+
+    /* =========================================
+       GABARIT COMPACT
+       ========================================= */
+
+    .pdf-layout-compact {
+      display: grid;
+      grid-template-columns:
+        48% minmax(0, 1fr);
+      gap: 4mm;
+      align-items: start;
+    }
+
+    .pdf-compact-info,
+    .pdf-compact-visuals {
+      min-width: 0;
+    }
+
+    .pdf-compact-info .pdf-cards {
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 2mm;
+      margin-bottom: 2mm;
+    }
+
+    .pdf-compact-info .pdf-card {
+      padding: 2mm;
+    }
+
+    .pdf-compact-info .pdf-card-long {
+      grid-column: 1 / -1;
+    }
+
+    .pdf-compact-info .kpi-title {
+      font-size: 17pt;
+    }
+
+    .pdf-compact-info .card_textpano {
+      font-size: 8.5pt;
+    }
+
+    .pdf-compact-visuals {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 3mm;
+    }
+
+    .pdf-compact-visuals img {
+      max-height: 75mm;
+    }
+
+    /* =========================================
+       GABARIT STANDARD
+       ========================================= */
+
+    .pdf-layout-standard {
+      display: grid;
+      grid-template-columns:
+        42% minmax(0, 1fr);
+      gap: 5mm;
+      align-items: start;
+    }
+
+    .pdf-standard-info,
+    .pdf-standard-visuals {
+      min-width: 0;
+    }
+
+    .pdf-standard-visuals {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 4mm;
+    }
+
+    .pdf-standard-visuals img {
+      max-height: 145mm;
+    }
+
+    /* =========================================
+       GABARIT DETAIL
+       ========================================= */
+
+    .pdf-layout-detail {
+      width: 100%;
+    }
+
+    .pdf-detail-top {
+      display: grid;
+      grid-template-columns:
+        42% minmax(0, 1fr);
+      gap: 5mm;
+      align-items: start;
+    }
+
+    .pdf-detail-info,
+    .pdf-detail-map {
+      min-width: 0;
+    }
+
+    .pdf-detail-map img {
+      max-height: 105mm;
+    }
+
+    .pdf-detail-chart {
+      width: 100%;
+      margin-top: 6mm;
+      break-before: page;
+      page-break-before: always;
+    }
+
+    .pdf-detail-chart img {
+      max-height: 155mm;
+    }
+
+    /* =========================================
+       GABARIT PLEINE LARGEUR
+       ========================================= */
+
+    .pdf-layout-full {
+      width: 100%;
+    }
+
+    .pdf-full-info {
+      width: 100%;
+      margin-bottom: 4mm;
+    }
+
+    .pdf-full-info .pdf-cards {
+      grid-template-columns:
+        repeat(3, minmax(0, 1fr));
+    }
+
+    .pdf-full-info .pdf-card-long {
+      grid-column: 1 / -1;
+    }
+
+    .pdf-full-visuals {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 5mm;
+    }
+
+    .pdf-full-visuals img {
+      max-height: 155mm;
+    }
+
+    /* =========================================
+       IMPRESSION
+       ========================================= */
+
+    .pdf-card,
+    .pdf-visual,
+    .pdf-theme-banner {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    img {
+      max-width: 100%;
+    }
+  `;
+}
+
+// =====================================================
+// 10. GENERATION DU PDF
+// =====================================================
+
+async function printSection(
+  page,
+  file,
+  theme,
+  firstOfTheme,
+  submenuId
+) {
+  const section = page.locator(
+    '.content-area .content-section:visible'
+  ).first();
+
+  await section.waitFor({
+    state: 'visible'
+  });
+
+  const title = await section.locator(
+    '.section-title'
+  ).first().innerText();
+
+  const source = await section.locator(
+    '.kpi-description'
+  ).first().innerText().catch(() => '');
+
+  const themeColor = theme?.color || '#015CA2';
+
+  const elements = await extractElements(
+    page,
+    section,
+    title
+  );
+
+  console.log(
+    `${title} : ${elements.length} blocs prepares`
+  );
+
+  const layout = getLayout(submenuId);
+
+  console.log(
+    `Gabarit : ${layout}`
+  );
+
+  const content = composeContent(
+    elements,
+    layout
+  );
+
+  const header = renderHeader(
+    theme,
+    firstOfTheme,
+    title,
+    source
+  );
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="fr">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        ${getCSS(themeColor)}
+      </style>
+    </head>
+
+    <body>
+      ${header}
+      ${content}
+    </body>
+    </html>
+  `;
 
   const pdfContext = await browser.newContext({
     viewport: {
@@ -1008,25 +1162,27 @@ async function printSection(
     const bytes = await fs.readFile(file);
     const pdf = await PDFDocument.load(bytes);
 
+    const pageCount = pdf.getPageCount();
+
     console.log(
-      `${title} : ${pdf.getPageCount()} page(s)`
+      `${title} : ${pageCount} page(s)`
     );
 
-    if (pdf.getPageCount() > 1) {
+    if (pageCount > 1) {
       console.warn(
         `Pagination a verifier : ${title}`
       );
     }
 
+    return pageCount;
+
   } finally {
     await pdfContext.close();
   }
-
-  console.log(`PDF finalise : ${file}`);
 }
 
 // =====================================================
-// 5. DECOUVERTE ET GENERATION
+// 11. DECOUVERTE DES RUBRIQUES
 // =====================================================
 
 try {
@@ -1061,15 +1217,19 @@ try {
 
   await discovery.close();
 
-  console.log(
-    `Detected ${
-      groups.reduce(
-        (sum, group) =>
-          sum + group.items.length,
-        0
-      )
-    } sections`
+  const totalSections = groups.reduce(
+    (sum, group) =>
+      sum + group.items.length,
+    0
   );
+
+  console.log(
+    `Detected ${totalSections} sections`
+  );
+
+  // =================================================
+  // 12. GENERATION DES 13 PDF
+  // =================================================
 
   let n = 0;
 
@@ -1102,7 +1262,7 @@ try {
 
         page = await preparePage();
 
-        await selectSection(
+        const submenuId = await selectSection(
           page,
           group.index,
           item.itemIndex
@@ -1110,6 +1270,7 @@ try {
 
         await waitForVisuals(page);
 
+        // Capture de diagnostic.
         await page.screenshot({
           path: path.join(
             OUT,
@@ -1118,11 +1279,12 @@ try {
           fullPage: false
         });
 
-        await printSection(
+        const pageCount = await printSection(
           page,
           file,
           theme,
-          firstOfTheme
+          firstOfTheme,
+          submenuId
         );
 
         report.push({
@@ -1130,7 +1292,9 @@ try {
           theme: group.title,
           section: item.title,
           status: 'ok',
-          file: `${name}.pdf`
+          file: `${name}.pdf`,
+          pages: pageCount,
+          layout: getLayout(submenuId)
         });
 
         console.log(
@@ -1178,19 +1342,34 @@ try {
 }
 
 // =====================================================
-// 6. BILAN
+// 13. BILAN
 // =====================================================
 
 const successCount = report.filter(
   item => item.status === 'ok'
 ).length;
 
+const totalPages = report
+  .filter(item => item.status === 'ok')
+  .reduce(
+    (sum, item) => sum + (item.pages || 0),
+    0
+  );
+
 console.log(
   `Finished: ${successCount}/${report.length} PDFs`
 );
 
-if (report.some(
-  item => item.status === 'error'
+console.log(
+  `Total pages thematiques : ${totalPages}`
+);
+
+console.log(
+  `Panorama estime : ${totalPages + 3} pages`
+);
+
+if (report.some(item =>
+  item.status === 'error'
 )) {
   process.exitCode = 1;
 }
