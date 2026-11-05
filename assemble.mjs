@@ -2,15 +2,29 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb
+} from 'pdf-lib';
 
-// CAMVS - Panorama territorial - assemblage 7.2
-// Les bandeaux sont deja crees par generate.mjs.
-// Aucune mise a l'echelle des pages thematiques.
+// =====================================================
+// PANORAMA TERRITORIAL CAMVS - VERSION 7.4
+// Couverture institutionnelle, avant-propos,
+// sommaire, indicateurs, rubriques et 4e couverture
+// =====================================================
+
 const OUT = 'output';
 const ASSETS = 'assets';
-const URL = 'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
-const DEST = path.join(OUT, 'Panorama-territorial-Melun-Val-de-Seine.pdf');
+
+const URL =
+  'https://data.melunvaldeseine.fr/pages/test-pano-arnaud/';
+
+const DEST = path.join(
+  OUT,
+  'Panorama-territorial-Melun-Val-de-Seine.pdf'
+);
+
 const NAVY = '#041447';
 const RED = '#F24E4C';
 
@@ -23,34 +37,49 @@ const themes = [
   { name: 'ENTREPRISES', image: 'entreprises.png' }
 ];
 
-const escapeHTML = value => String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
+// =====================================================
+// 1. UTILITAIRES
+// =====================================================
 
-const toData = bytes =>
-  'data:image/png;base64,' + bytes.toString('base64');
+function escapeHTML(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
-const imageAsset = async filename =>
-  toData(await fs.readFile(path.join(ASSETS, filename)));
+function toData(bytes) {
+  return 'data:image/png;base64,' +
+    bytes.toString('base64');
+}
+
+async function imageAsset(filename) {
+  return toData(
+    await fs.readFile(path.join(ASSETS, filename))
+  );
+}
 
 // =====================================================
-// 1. LIRE ET VERIFIER LES PDF INDIVIDUELS
+// 2. CHARGER LES PDF INDIVIDUELS
 // =====================================================
 
 const report = JSON.parse(
-  await fs.readFile(path.join(OUT, 'rapport.json'), 'utf8')
+  await fs.readFile(
+    path.join(OUT, 'rapport.json'),
+    'utf8'
+  )
 );
 
 if (
   !Array.isArray(report) ||
-  !report.length ||
-  report.some(x => x.status !== 'ok')
+  report.length !== 13 ||
+  report.some(item => item.status !== 'ok')
 ) {
   throw new Error(
-    'Assemblage impossible : certaines rubriques ont echoue.'
+    'Assemblage impossible : les 13 rubriques ' +
+    'doivent avoir ete generees correctement.'
   );
 }
 
@@ -60,7 +89,9 @@ for (const item of [...report].sort(
   (a, b) => a.number - b.number
 )) {
   const source = await PDFDocument.load(
-    await fs.readFile(path.join(OUT, item.file))
+    await fs.readFile(
+      path.join(OUT, item.file)
+    )
   );
 
   sections.push({
@@ -70,28 +101,37 @@ for (const item of [...report].sort(
   });
 }
 
-console.log(`${sections.length} rubriques disponibles`);
+console.log(
+  `${sections.length} rubriques disponibles`
+);
 
 // =====================================================
-// 2. ILLUSTRATIONS COUVERTURE ET SOMMAIRE
+// 3. CHARGER LES ILLUSTRATIONS ET LES LOGOS
 // =====================================================
 
 const banner = await imageAsset(
   'homepage-datagrid-banner.png'
 );
 
+const logoData = await imageAsset('logo-data.png');
+const logoCAMVS = await imageAsset('logo-camvs.png');
+const logoUE = await imageAsset('logo-ue.png');
+
 for (const theme of themes) {
   theme.data = await imageAsset(theme.image);
 }
 
-const edition = new Date().toLocaleDateString('fr-FR', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'Europe/Paris'
-});
+const edition = new Date().toLocaleDateString(
+  'fr-FR',
+  {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Paris'
+  }
+);
 
 // =====================================================
-// 3. CAPTURER LES INDICATEURS CLES HUWISE
+// 4. CAPTURER LES INDICATEURS CLES HUWISE
 // =====================================================
 
 let statsImage;
@@ -147,7 +187,6 @@ try {
       '.panorama-overview-features'
     ).first();
 
-    // Image de la carte sans "Cliquer pour agrandir".
     const map = overview.locator(
       '.panorama-overview-map img'
     ).first();
@@ -189,6 +228,7 @@ try {
       const bytes = await locator.screenshot({
         type: 'png',
         animations: 'disabled',
+        scale: 'device',
         timeout: 60000
       });
 
@@ -204,7 +244,7 @@ try {
       buffers.map(toData);
 
     console.log(
-      'Indicateurs et carte captures en haute definition'
+      'Indicateurs cles captures en HD'
     );
 
   } finally {
@@ -216,10 +256,16 @@ try {
 }
 
 // =====================================================
-// 4. SOMMAIRE ET PAGINATION DYNAMIQUE
+// 5. CALCULER LA PAGINATION
 // =====================================================
 
-let nextPage = 4;
+// Page 1 : couverture
+// Page 2 : avant-propos
+// Page 3 : sommaire
+// Page 4 : indicateurs cles
+// Page 5 : premiere rubrique
+
+let nextPage = 5;
 
 for (const section of sections) {
   section.startPage = nextPage;
@@ -235,7 +281,7 @@ const tocGroups = themes.map(theme => ({
 })).filter(group => group.entries.length);
 
 // =====================================================
-// 5. STYLES DES PAGES INTRODUCTIVES
+// 6. STYLES GENERAUX
 // =====================================================
 
 const css = `
@@ -324,10 +370,87 @@ const css = `
   .overview-map img {
     max-height: 140mm;
   }
+
+  /* LOGOS INSTITUTIONNELS */
+
+  .logos {
+    display: flex;
+    align-items: center;
+    gap: 9mm;
+  }
+
+  .logo-data {
+    width: 48mm;
+    height: 17mm;
+    object-fit: contain;
+  }
+
+  .logo-camvs {
+    width: 39mm;
+    height: 23mm;
+    object-fit: contain;
+  }
+
+  .logo-ue-panel {
+    width: 33mm;
+    height: 31mm;
+    padding: 2mm;
+    background: white;
+    border-radius: 2mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .logo-ue {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  /* AVANT-PROPOS */
+
+  .preamble {
+    padding: 15mm 20mm;
+    color: ${NAVY};
+  }
+
+  .preamble h1 {
+    font-size: 27pt;
+    line-height: 1.12;
+    margin: 5mm 0 3mm;
+  }
+
+  .preamble-content {
+    max-width: 245mm;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: #334155;
+  }
+
+  .preamble-content p {
+    margin: 0 0 4mm;
+  }
+
+  .preamble-content h2 {
+    font-size: 12pt;
+    color: ${NAVY};
+    margin: 5mm 0 2mm;
+  }
+
+  .preamble-content strong {
+    color: ${NAVY};
+  }
+
+  .preamble-content a {
+    color: #015CA2;
+    text-decoration: none;
+    font-weight: 700;
+  }
 `;
 
 // =====================================================
-// 6. COUVERTURE
+// 7. COUVERTURE AVEC LES TROIS LOGOS
 // =====================================================
 
 const coverHTML = `
@@ -335,32 +458,34 @@ const coverHTML = `
   background:${NAVY};
   color:white;
 ">
+
   <div style="
     position:absolute;
-    top:18mm;
-    left:20mm;
-    font-size:12pt;
-    font-weight:700;
-    letter-spacing:1px;
+    top:12mm;
+    left:17mm;
+    right:17mm;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
   ">
-    AGGLOMÉRATION MELUN VAL DE SEINE
+
+    <img src="${logoData}" class="logo-data">
+
+    <div class="logos">
+      <img src="${logoCAMVS}" class="logo-camvs">
+
+      <div class="logo-ue-panel">
+        <img src="${logoUE}" class="logo-ue">
+      </div>
+    </div>
   </div>
 
   <div style="
     position:absolute;
-    top:20mm;
-    right:20mm;
-    font-size:11pt;
-    color:#C6D9F3;
-  ">
-    ${escapeHTML(edition)}
-  </div>
-
-  <div style="
-    position:absolute;
+    top:67mm;
     left:20mm;
-    top:53mm;
   ">
+
     <div style="
       font-size:43pt;
       font-weight:800;
@@ -375,15 +500,23 @@ const coverHTML = `
       width:28mm;
       height:1.5mm;
       background:${RED};
-      margin-top:12mm;
+      margin-top:10mm;
     "></div>
 
     <div style="
-      margin-top:9mm;
+      margin-top:7mm;
       font-size:15pt;
       color:#D8E8FF;
     ">
       20 communes, un territoire en données
+    </div>
+
+    <div style="
+      margin-top:5mm;
+      font-size:11pt;
+      color:#AFC7E8;
+    ">
+      ${escapeHTML(edition)}
     </div>
   </div>
 
@@ -392,7 +525,7 @@ const coverHTML = `
     left:0;
     bottom:0;
     width:100%;
-    height:72mm;
+    height:64mm;
     object-fit:cover;
     object-position:center bottom;
   ">
@@ -400,7 +533,7 @@ const coverHTML = `
   <div style="
     position:absolute;
     left:20mm;
-    bottom:12mm;
+    bottom:10mm;
     font-size:11pt;
     font-weight:600;
   ">
@@ -410,7 +543,106 @@ const coverHTML = `
 `;
 
 // =====================================================
-// 7. SOMMAIRE ILLUSTRE
+// 8. PAGE AVANT-PROPOS
+// =====================================================
+
+const preambleHTML = `
+<div class="page preamble">
+
+  <div class="small-heading">
+    PANORAMA TERRITORIAL
+  </div>
+
+  <h1>
+    Un territoire à découvrir,<br>
+    des données à partager
+  </h1>
+
+  <div class="accent" style="
+    margin-bottom:7mm;
+  "></div>
+
+  <div class="preamble-content">
+
+    <p>
+      Comment évolue la population de notre territoire ?
+      Où se concentrent les emplois ? Quelles sont les
+      caractéristiques de nos logements et de notre
+      tissu économique ?
+    </p>
+
+    <p>
+      Avec ce Panorama territorial, l'Agglomération
+      Melun Val de Seine propose à chacun — habitants,
+      élus, associations, entreprises, étudiants ou
+      simples curieux — de mieux connaître les
+      20 communes qui composent notre territoire.
+    </p>
+
+    <h2>
+      Un panorama vivant, alimenté par les données publiques
+    </h2>
+
+    <p>
+      Ce document est généré automatiquement à partir
+      du Panorama territorial disponible sur la plateforme
+      <strong>data.melunvaldeseine.fr</strong>.
+      Les indicateurs, cartes et graphiques sont issus
+      de jeux de données publiques, actualisés au fil
+      de leur disponibilité et des mises à jour de leurs
+      producteurs. Les sources et les millésimes sont
+      précisés au sein des différentes visualisations.
+    </p>
+
+    <p>
+      Contrairement à une publication statistique
+      traditionnelle, ce panorama n'est donc pas figé :
+      de nouvelles éditions peuvent être produites
+      à partir des données disponibles sur la plateforme.
+    </p>
+
+    <h2>La donnée avant la mise en page !</h2>
+
+    <p>
+      Parce que ce PDF est produit automatiquement,
+      quelques imperfections de présentation peuvent
+      subsister : décalages, espacements inhabituels
+      ou graphiques répartis sur plusieurs pages.
+    </p>
+
+    <p>
+      Nous avons fait le choix de privilégier
+      <strong>la fiabilité des données, leur actualisation
+      et leur accessibilité</strong> plutôt qu'une mise en
+      page parfaite. Pour explorer les visualisations,
+      appliquer des filtres ou consulter les données
+      sources, rendez-vous sur la version interactive
+      du Panorama territorial.
+    </p>
+
+    <p>
+      Vos remarques, suggestions et signalements
+      sont les bienvenus :
+      <strong>data@camvs.com</strong>.
+    </p>
+
+  </div>
+
+  <img src="${banner}" style="
+    position:absolute;
+    left:0;
+    bottom:0;
+    width:100%;
+    height:17mm;
+    object-fit:cover;
+    object-position:center bottom;
+  ">
+
+</div>
+`;
+
+// =====================================================
+// 9. SOMMAIRE ILLUSTRE
 // =====================================================
 
 const tocHTML = `
@@ -419,6 +651,7 @@ const tocHTML = `
   color:${NAVY};
   padding:15mm 18mm;
 ">
+
   <div class="small-heading">
     PANORAMA TERRITORIAL
   </div>
@@ -440,6 +673,7 @@ const tocHTML = `
     grid-template-columns:1fr 1fr;
     gap:7mm;
   ">
+
     ${tocGroups.map((group, index) => `
       <div style="
         border:1px solid #E0E5ED;
@@ -447,6 +681,7 @@ const tocHTML = `
         overflow:hidden;
         background:#F7F9FC;
       ">
+
         <div style="
           height:19mm;
           background:${NAVY};
@@ -455,6 +690,7 @@ const tocHTML = `
           padding:5mm;
           color:white;
         ">
+
           <img src="${group.data}" style="
             position:absolute;
             right:0;
@@ -477,6 +713,7 @@ const tocHTML = `
         </div>
 
         <div style="padding:4mm 5mm;">
+
           ${group.entries.map(section => `
             <div style="
               display:flex;
@@ -487,6 +724,7 @@ const tocHTML = `
               line-height:1.25;
               border-bottom:1px solid #E6EAF0;
             ">
+
               <span>
                 ${escapeHTML(section.section)}
               </span>
@@ -512,7 +750,7 @@ const tocHTML = `
 `;
 
 // =====================================================
-// 8. PAGE DES INDICATEURS CLES
+// 10. PAGE DES INDICATEURS CLES
 // =====================================================
 
 const overviewHTML = `
@@ -521,11 +759,13 @@ const overviewHTML = `
   color:${NAVY};
   padding:13mm 15mm;
 ">
+
   <div style="
     display:flex;
     justify-content:space-between;
     align-items:center;
   ">
+
     <div class="small-heading">
       PANORAMA TERRITORIAL
     </div>
@@ -553,34 +793,139 @@ const overviewHTML = `
 
   <div class="overview-grid">
     <div class="overview-block">
-      <img src="${statsImage}"
-        alt="Chiffres clés du territoire">
+      <img src="${statsImage}">
     </div>
 
     <div class="overview-block">
-      <img src="${featuresImage}"
-        alt="Caractéristiques du territoire">
+      <img src="${featuresImage}">
     </div>
 
     <div class="overview-block overview-map">
-      <img src="${mapImage}"
-        alt="Carte de Melun Val de Seine">
+      <img src="${mapImage}">
     </div>
   </div>
 
   <div class="intro-footer">
-    <span>
-      Source : data.melunvaldeseine.fr
-    </span>
-    <span>
-      Agglomération Melun Val de Seine
-    </span>
+    <span>Source : data.melunvaldeseine.fr</span>
+    <span>Agglomération Melun Val de Seine</span>
   </div>
 </div>
 `;
 
 // =====================================================
-// 9. GENERER LES 3 PAGES D'INTRODUCTION
+// 11. QUATRIEME DE COUVERTURE
+// =====================================================
+
+const backCoverHTML = `
+<div class="page" style="
+  background:${NAVY};
+  color:white;
+">
+
+  <div style="
+    position:absolute;
+    top:18mm;
+    left:20mm;
+    font-size:10pt;
+    font-weight:700;
+    letter-spacing:1px;
+    color:#AFC7E8;
+  ">
+    AGGLOMÉRATION MELUN VAL DE SEINE
+  </div>
+
+  <div style="
+    position:absolute;
+    top:52mm;
+    left:20mm;
+    right:20mm;
+    text-align:center;
+  ">
+
+    <h1 style="
+      font-size:31pt;
+      font-weight:800;
+      margin:0;
+      line-height:1.2;
+    ">
+      Le territoire en données
+    </h1>
+
+    <div style="
+      width:28mm;
+      height:1.5mm;
+      background:${RED};
+      margin:10mm auto;
+    "></div>
+
+    <p style="
+      font-size:15pt;
+      color:#D8E8FF;
+      margin:0;
+    ">
+      Explorez le panorama interactif
+    </p>
+
+    <div style="
+      font-size:20pt;
+      font-weight:700;
+      margin-top:8mm;
+    ">
+      data.melunvaldeseine.fr
+    </div>
+
+    <div style="
+      margin-top:7mm;
+      font-size:11pt;
+      color:#AFC7E8;
+    ">
+      Une question, une remarque ?
+      data@camvs.com
+    </div>
+  </div>
+
+  <div style="
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:0;
+    height:78mm;
+  ">
+
+    <img src="${banner}" style="
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      object-position:center bottom;
+    ">
+  </div>
+
+  <div style="
+    position:absolute;
+    left:18mm;
+    right:18mm;
+    bottom:14mm;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  ">
+
+    <img src="${logoData}" class="logo-data">
+
+    <div class="logos">
+      <img src="${logoCAMVS}" class="logo-camvs">
+
+      <div class="logo-ue-panel">
+        <img src="${logoUE}" class="logo-ue">
+      </div>
+    </div>
+  </div>
+
+</div>
+`;
+
+// =====================================================
+// 12. GENERER LES QUATRE PAGES D'INTRODUCTION
 // =====================================================
 
 const introBrowser = await chromium.launch({
@@ -601,15 +946,16 @@ try {
     await page.setContent(`
       <!DOCTYPE html>
       <html lang="fr">
-        <head>
-          <meta charset="UTF-8">
-          <style>${css}</style>
-        </head>
-        <body>
-          ${coverHTML}
-          ${tocHTML}
-          ${overviewHTML}
-        </body>
+      <head>
+        <meta charset="UTF-8">
+        <style>${css}</style>
+      </head>
+      <body>
+        ${coverHTML}
+        ${preambleHTML}
+        ${tocHTML}
+        ${overviewHTML}
+      </body>
       </html>
     `, {
       waitUntil: 'load'
@@ -619,12 +965,48 @@ try {
       await document.fonts.ready;
 
       await Promise.all(
-        [...document.images].map(img => img.decode())
+        [...document.images].map(img =>
+          img.decode()
+        )
       );
     });
 
     await page.pdf({
       path: path.join(OUT, '00-introduction.pdf'),
+      format: 'A4',
+      landscape: true,
+      printBackground: true,
+      preferCSSPageSize: true
+    });
+
+    // Generer separement la derniere page.
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html lang="fr">
+      <head>
+        <meta charset="UTF-8">
+        <style>${css}</style>
+      </head>
+      <body>
+        ${backCoverHTML}
+      </body>
+      </html>
+    `, {
+      waitUntil: 'load'
+    });
+
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+
+      await Promise.all(
+        [...document.images].map(img =>
+          img.decode()
+        )
+      );
+    });
+
+    await page.pdf({
+      path: path.join(OUT, '00-quatrieme-couverture.pdf'),
       format: 'A4',
       landscape: true,
       printBackground: true,
@@ -640,7 +1022,7 @@ try {
 }
 
 // =====================================================
-// 10. ASSEMBLAGE SANS REDUCTION DES PAGES
+// 13. ASSEMBLAGE FINAL SANS REDUCTION
 // =====================================================
 
 const finalPDF = await PDFDocument.create();
@@ -651,9 +1033,9 @@ const introPDF = await PDFDocument.load(
   )
 );
 
-if (introPDF.getPageCount() !== 3) {
+if (introPDF.getPageCount() !== 4) {
   throw new Error(
-    `Introduction : 3 pages attendues, ` +
+    `Introduction : 4 pages attendues, ` +
     `${introPDF.getPageCount()} obtenues.`
   );
 }
@@ -667,10 +1049,7 @@ for (const page of introPages) {
   finalPDF.addPage(page);
 }
 
-// Copier chaque page telle quelle.
-// Aucun bandeau supplementaire.
-// Aucune reduction a 92 %.
-
+// Copier les PDF sans modifier leur taille.
 for (const section of sections) {
   const copied = await finalPDF.copyPages(
     section.source,
@@ -680,16 +1059,30 @@ for (const section of sections) {
   for (const page of copied) {
     finalPDF.addPage(page);
   }
+}
 
-  console.log(
-    `Ajout sans reduction : ` +
-    `${section.theme} / ${section.section} ` +
-    `(${section.pages} page(s))`
+// Ajouter la quatrieme de couverture.
+const backPDF = await PDFDocument.load(
+  await fs.readFile(
+    path.join(OUT, '00-quatrieme-couverture.pdf')
+  )
+);
+
+if (backPDF.getPageCount() !== 1) {
+  throw new Error(
+    'La quatrieme de couverture doit faire une page.'
   );
 }
 
+const [backPage] = await finalPDF.copyPages(
+  backPDF,
+  [0]
+);
+
+finalPDF.addPage(backPage);
+
 // =====================================================
-// 11. PAGINATION CONTINUE
+// 14. PAGINATION
 // =====================================================
 
 const font = await finalPDF.embedFont(
@@ -699,7 +1092,10 @@ const font = await finalPDF.embedFont(
 const pages = finalPDF.getPages();
 const total = pages.length;
 
-for (let index = 2; index < total; index++) {
+// Pas de numero sur la couverture,
+// l'avant-propos ni la quatrieme de couverture.
+
+for (let index = 2; index < total - 1; index++) {
   const page = pages[index];
   const { width } = page.getSize();
 
@@ -713,7 +1109,7 @@ for (let index = 2; index < total; index++) {
 }
 
 // =====================================================
-// 12. METADONNEES ET ENREGISTREMENT
+// 15. METADONNEES
 // =====================================================
 
 finalPDF.setTitle(
@@ -725,7 +1121,7 @@ finalPDF.setAuthor(
 );
 
 finalPDF.setSubject(
-  'Indicateurs territoriaux et donnees publiques'
+  'Panorama territorial et donnees publiques'
 );
 
 await fs.writeFile(
