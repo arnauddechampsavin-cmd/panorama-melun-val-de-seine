@@ -9,9 +9,9 @@ import {
 } from 'pdf-lib';
 
 // =====================================================
-// PANORAMA TERRITORIAL CAMVS - VERSION 7.5
-// Finitions : avant-propos, chiffres cles,
-// seconde page Population
+// PANORAMA TERRITORIAL CAMVS - VERSION 7.6
+// Couverture datagrid, vague institutionnelle,
+// virgule traversante et logos couleur.
 // =====================================================
 
 const OUT = 'output';
@@ -56,11 +56,9 @@ function toData(bytes) {
 }
 
 async function imageAsset(filename) {
-  const bytes = await fs.readFile(
-    path.join(ASSETS, filename)
+  return toData(
+    await fs.readFile(path.join(ASSETS, filename))
   );
-
-  return toData(bytes);
 }
 
 function pdfColor(hex) {
@@ -74,7 +72,7 @@ function pdfColor(hex) {
 }
 
 // =====================================================
-// 2. CHARGER LES 13 PDF
+// 2. CHARGEMENT DES PDF INDIVIDUELS
 // =====================================================
 
 const report = JSON.parse(
@@ -125,8 +123,19 @@ const banner = await imageAsset(
   'homepage-datagrid-banner.png'
 );
 
+// Logos blancs pour la derniere page.
 const logoData = await imageAsset('logo-data.png');
 const logoCAMVS = await imageAsset('logo-camvs.png');
+
+// Logos couleur pour la couverture.
+const logoDataCouleur = await imageAsset(
+  'logo-data-couleur.png'
+);
+
+const logoCAMVSCouleur = await imageAsset(
+  'logo-camvs-couleur.png'
+);
+
 const logoUE = await imageAsset('logo-ue.png');
 
 for (const theme of themes) {
@@ -143,7 +152,7 @@ const edition = new Date().toLocaleDateString(
 );
 
 // =====================================================
-// 4. INDICATEURS CLES HUWISE
+// 4. CAPTURE DES INDICATEURS CLES HUWISE
 // =====================================================
 
 let statsImage;
@@ -271,6 +280,12 @@ try {
 // 5. PAGINATION ET SOMMAIRE
 // =====================================================
 
+// 1 couverture
+// 2 avant-propos
+// 3 sommaire
+// 4 indicateurs cles
+// 5 premiere sous-thematique
+
 let nextPage = 5;
 
 for (const section of sections) {
@@ -385,7 +400,7 @@ const css = `
     object-fit: contain;
   }
 
-  /* AVANT-PROPOS - VERSION 7.5 */
+  /* AVANT-PROPOS */
 
   .preamble {
     padding: 14mm 20mm;
@@ -446,9 +461,6 @@ const css = `
     object-fit: contain;
   }
 
-  /* Agrandissement leger des chiffres :
-     on conserve la largeur de la carte. */
-
   .overview-stats img,
   .overview-features img {
     transform: scale(1.07);
@@ -461,93 +473,241 @@ const css = `
 `;
 
 // =====================================================
-// 7. COUVERTURE
+// 7. NOUVELLE COUVERTURE - VERSION 7.6
 // =====================================================
 
 const coverHTML = `
 <div class="page" style="
+  position:relative;
   background:${NAVY};
   color:white;
+  overflow:hidden;
 ">
 
+  <!-- DATA-GRID SUR TOUTE LA COUVERTURE -->
+
+  <img src="${banner}" style="
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    object-position:center center;
+    z-index:0;
+  ">
+
+  <!-- DEGRADE DE LISIBILITE -->
+
   <div style="
     position:absolute;
-    top:12mm;
-    left:17mm;
-    right:17mm;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
+    inset:0;
+    z-index:1;
+    background:linear-gradient(
+      180deg,
+      rgba(4,20,71,0.88) 0%,
+      rgba(4,20,71,0.70) 33%,
+      rgba(4,20,71,0.30) 67%,
+      rgba(4,20,71,0.05) 100%
+    );
+  "></div>
+
+  <!-- IDENTITE INSTITUTIONNELLE -->
+
+  <div style="
+    position:absolute;
+    top:11mm;
+    left:18mm;
+    z-index:2;
+    font-size:11pt;
+    font-weight:700;
+    letter-spacing:1.1px;
+    color:#E0EDFF;
   ">
-    <img src="${logoData}" class="logo-data">
-
-    <div class="logos">
-      <img src="${logoCAMVS}" class="logo-camvs">
-
-      <div class="logo-ue-panel">
-        <img src="${logoUE}" class="logo-ue">
-      </div>
-    </div>
+    AGGLOMÉRATION MELUN VAL DE SEINE
   </div>
 
+  <!-- DATE AUTOMATIQUE -->
+
   <div style="
     position:absolute;
-    top:67mm;
-    left:20mm;
+    top:11mm;
+    right:18mm;
+    z-index:2;
+    font-size:10pt;
+    color:#D8E8FF;
   ">
+    ${escapeHTML(edition)}
+  </div>
+
+  <!-- TITRE GRAND FORMAT -->
+
+  <div style="
+    position:absolute;
+    top:30mm;
+    left:18mm;
+    right:18mm;
+    z-index:2;
+  ">
+
     <div style="
-      font-size:43pt;
+      font-size:62pt;
       font-weight:800;
-      line-height:1.12;
-      letter-spacing:-1px;
+      line-height:1.02;
+      letter-spacing:-1.5px;
+      color:#FFFFFF;
+      text-shadow:0 3px 15px rgba(0,0,0,0.15);
     ">
-      Panorama
-      <div>territorial</div>
+      Panorama<br>
+      territorial
     </div>
 
     <div style="
-      width:28mm;
-      height:1.5mm;
+      width:48mm;
+      height:1.7mm;
       background:${RED};
-      margin-top:10mm;
+      margin-top:8mm;
     "></div>
 
     <div style="
-      margin-top:7mm;
-      font-size:15pt;
-      color:#D8E8FF;
+      margin-top:6mm;
+      font-size:17pt;
+      font-weight:500;
+      color:#E2EEFF;
     ">
       20 communes, un territoire en données
     </div>
 
-    <div style="
-      margin-top:5mm;
-      font-size:11pt;
-      color:#AFC7E8;
-    ">
-      ${escapeHTML(edition)}
-    </div>
   </div>
 
-  <img src="${banner}" style="
-    position:absolute;
-    left:0;
-    bottom:0;
-    width:100%;
-    height:64mm;
-    object-fit:cover;
-    object-position:center bottom;
-  ">
+  <!--
+    BANDEAU BLANC :
+    plus bas a gauche, plus haut a droite.
+
+    Le dessin utilise un SVG sur toute la page
+    afin de garantir des courbes vectorielles.
+  -->
+
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 1122 794"
+    preserveAspectRatio="none"
+    style="
+      position:absolute;
+      inset:0;
+      width:100%;
+      height:100%;
+      z-index:3;
+      pointer-events:none;
+    "
+  >
+
+    <!-- VAGUE BLANCHE -->
+
+    <path
+      d="
+        M 0 705
+        C 260 748, 565 730, 785 687
+        C 935 660, 1040 624, 1122 595
+        L 1122 794
+        L 0 794
+        Z
+      "
+      fill="#FFFFFF"
+    />
+
+    <!--
+      VIRGULE BLEU NUIT TRAVERSANTE
+
+      Elle part dans la zone bleue au-dessus
+      de la vague et descend hors du document.
+      Les extremites sont donc invisibles.
+    -->
+
+    <path
+      d="
+        M 795 626
+        C 778 679, 760 740, 717 824
+        L 733 824
+        C 787 747, 806 681, 812 626
+        Z
+      "
+      fill="#041447"
+    />
+
+  </svg>
+
+  <!-- LOGOS SUR LE BANDEAU BLANC -->
+
+  <!-- PLATEFORME DATA -->
 
   <div style="
     position:absolute;
     left:20mm;
-    bottom:10mm;
-    font-size:11pt;
-    font-weight:600;
+    bottom:9mm;
+    width:75mm;
+    height:27mm;
+    z-index:4;
+    display:flex;
+    align-items:center;
+    justify-content:flex-start;
   ">
-    data.melunvaldeseine.fr
+
+    <img src="${logoDataCouleur}" style="
+      display:block;
+      width:100%;
+      max-height:27mm;
+      object-fit:contain;
+      object-position:left center;
+    ">
+
   </div>
+
+  <!-- COFINANCEMENT UNION EUROPEENNE -->
+
+  <div style="
+    position:absolute;
+    left:103mm;
+    bottom:9mm;
+    width:63mm;
+    height:27mm;
+    z-index:4;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  ">
+
+    <img src="${logoUE}" style="
+      display:block;
+      width:100%;
+      max-height:27mm;
+      object-fit:contain;
+    ">
+
+  </div>
+
+  <!-- LOGO CAMVS A DROITE DE LA VIRGULE -->
+
+  <div style="
+    position:absolute;
+    right:13mm;
+    bottom:9mm;
+    width:69mm;
+    height:34mm;
+    z-index:4;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  ">
+
+    <img src="${logoCAMVSCouleur}" style="
+      display:block;
+      width:100%;
+      max-height:34mm;
+      object-fit:contain;
+    ">
+
+  </div>
+
 </div>
 `;
 
@@ -759,7 +919,7 @@ const tocHTML = `
 `;
 
 // =====================================================
-// 10. INDICATEURS CLES - PAGE 4
+// 10. INDICATEURS CLES
 // =====================================================
 
 const overviewHTML = `
@@ -828,6 +988,8 @@ const overviewHTML = `
 // =====================================================
 // 11. QUATRIEME DE COUVERTURE
 // =====================================================
+
+// Conservee comme dans la version 7.5.
 
 const backCoverHTML = `
 <div class="page" style="
@@ -1050,7 +1212,6 @@ for (const page of introPages) {
   finalPDF.addPage(page);
 }
 
-// Polices pour les en-tetes et la pagination.
 const font = await finalPDF.embedFont(
   StandardFonts.Helvetica
 );
@@ -1060,7 +1221,7 @@ const boldFont = await finalPDF.embedFont(
 );
 
 // =====================================================
-// 14. AJOUT DES RUBRIQUES
+// 14. RUBRIQUES THEMATIQUES
 // =====================================================
 
 for (const section of sections) {
@@ -1069,9 +1230,6 @@ for (const section of sections) {
     section.pages >= 2;
 
   if (!isPopulation) {
-    // Toutes les autres rubriques sont copiees
-    // sans aucune modification.
-
     const copied = await finalPDF.copyPages(
       section.source,
       section.source.getPageIndices()
@@ -1084,7 +1242,7 @@ for (const section of sections) {
     continue;
   }
 
-  // Premiere page Population : intacte.
+  // Premiere page Population intacte.
   const [firstPage] = await finalPDF.copyPages(
     section.source,
     [0]
@@ -1092,9 +1250,7 @@ for (const section of sections) {
 
   finalPDF.addPage(firstPage);
 
-  // Deuxieme page Population :
-  // ajouter un en-tete sans reencoder le graphique.
-
+  // Deuxieme page Population avec en-tete.
   const sourcePage = section.source.getPage(1);
 
   const [embedded] = await finalPDF.embedPages(
@@ -1108,23 +1264,13 @@ for (const section of sections) {
     height
   ]);
 
-  // Deplacer le contenu original de 45 points
-  // vers le bas, sans le redimensionner.
-  //
-  // Cela libere une bande en haut pour le titre.
-  // Le contenu en bas de page doit etre controle
-  // sur le PDF final.
-
-  const offset = 45;
-
   newPage.drawPage(embedded, {
     x: 0,
-    y: -offset,
+    y: -45,
     width,
     height
   });
 
-  // En-tete bleu nuit.
   newPage.drawRectangle({
     x: 0,
     y: height - 46,
@@ -1133,7 +1279,6 @@ for (const section of sections) {
     color: pdfColor(NAVY)
   });
 
-  // Filet rouge.
   newPage.drawRectangle({
     x: 0,
     y: height - 46,
@@ -1142,8 +1287,10 @@ for (const section of sections) {
     color: pdfColor(RED)
   });
 
+  // Helvetica standard ne prend pas en charge
+  // les accents : texte ASCII pour ce bandeau.
   newPage.drawText(
-    'DÉMOGRAPHIE / Population',
+    'DEMOGRAPHIE / Population',
     {
       x: 22,
       y: height - 20,
@@ -1154,7 +1301,7 @@ for (const section of sections) {
   );
 
   newPage.drawText(
-    'Évolution de la population par commune',
+    'Evolution de la population par commune',
     {
       x: 22,
       y: height - 36,
@@ -1164,9 +1311,8 @@ for (const section of sections) {
     }
   );
 
-  // Rappel de la source sous le bandeau.
   newPage.drawText(
-    'Source : données du Panorama territorial',
+    'Source : donnees du Panorama territorial',
     {
       x: 22,
       y: height - 58,
@@ -1176,7 +1322,6 @@ for (const section of sections) {
     }
   );
 
-  // Conserver les pages eventuelles suivantes.
   if (section.pages > 2) {
     const indices = Array.from(
       { length: section.pages - 2 },
@@ -1192,10 +1337,6 @@ for (const section of sections) {
       finalPDF.addPage(page);
     }
   }
-
-  console.log(
-    'Page Population : en-tete ajoute au graphique'
-  );
 }
 
 // =====================================================
