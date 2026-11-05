@@ -9,9 +9,9 @@ import {
 } from 'pdf-lib';
 
 // =====================================================
-// PANORAMA TERRITORIAL CAMVS - VERSION 7.4
-// Couverture institutionnelle, avant-propos,
-// sommaire, indicateurs, rubriques et 4e couverture
+// PANORAMA TERRITORIAL CAMVS - VERSION 7.5
+// Finitions : avant-propos, chiffres cles,
+// seconde page Population
 // =====================================================
 
 const OUT = 'output';
@@ -56,13 +56,25 @@ function toData(bytes) {
 }
 
 async function imageAsset(filename) {
-  return toData(
-    await fs.readFile(path.join(ASSETS, filename))
+  const bytes = await fs.readFile(
+    path.join(ASSETS, filename)
+  );
+
+  return toData(bytes);
+}
+
+function pdfColor(hex) {
+  const value = hex.replace('#', '');
+
+  return rgb(
+    parseInt(value.slice(0, 2), 16) / 255,
+    parseInt(value.slice(2, 4), 16) / 255,
+    parseInt(value.slice(4, 6), 16) / 255
   );
 }
 
 // =====================================================
-// 2. CHARGER LES PDF INDIVIDUELS
+// 2. CHARGER LES 13 PDF
 // =====================================================
 
 const report = JSON.parse(
@@ -79,7 +91,7 @@ if (
 ) {
   throw new Error(
     'Assemblage impossible : les 13 rubriques ' +
-    'doivent avoir ete generees correctement.'
+    'doivent etre generees correctement.'
   );
 }
 
@@ -106,7 +118,7 @@ console.log(
 );
 
 // =====================================================
-// 3. CHARGER LES ILLUSTRATIONS ET LES LOGOS
+// 3. ILLUSTRATIONS ET LOGOS
 // =====================================================
 
 const banner = await imageAsset(
@@ -131,7 +143,7 @@ const edition = new Date().toLocaleDateString(
 );
 
 // =====================================================
-// 4. CAPTURER LES INDICATEURS CLES HUWISE
+// 4. INDICATEURS CLES HUWISE
 // =====================================================
 
 let statsImage;
@@ -256,14 +268,8 @@ try {
 }
 
 // =====================================================
-// 5. CALCULER LA PAGINATION
+// 5. PAGINATION ET SOMMAIRE
 // =====================================================
-
-// Page 1 : couverture
-// Page 2 : avant-propos
-// Page 3 : sommaire
-// Page 4 : indicateurs cles
-// Page 5 : premiere rubrique
 
 let nextPage = 5;
 
@@ -342,36 +348,7 @@ const css = `
     color: #64748B;
   }
 
-  .overview-grid {
-    display: grid;
-    grid-template-columns: 30fr 30fr 40fr;
-    gap: 4mm;
-    height: 142mm;
-    align-items: center;
-  }
-
-  .overview-block {
-    min-width: 0;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .overview-block img {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    width: auto;
-    height: auto;
-    object-fit: contain;
-  }
-
-  .overview-map img {
-    max-height: 140mm;
-  }
-
-  /* LOGOS INSTITUTIONNELS */
+  /* LOGOS */
 
   .logos {
     display: flex;
@@ -408,49 +385,83 @@ const css = `
     object-fit: contain;
   }
 
-  /* AVANT-PROPOS */
+  /* AVANT-PROPOS - VERSION 7.5 */
 
   .preamble {
-    padding: 15mm 20mm;
+    padding: 14mm 20mm;
     color: ${NAVY};
   }
 
   .preamble h1 {
-    font-size: 27pt;
+    font-size: 28pt;
     line-height: 1.12;
-    margin: 5mm 0 3mm;
+    margin: 4mm 0 3mm;
   }
 
   .preamble-content {
-    max-width: 245mm;
-    font-size: 10.5pt;
-    line-height: 1.5;
+    max-width: 250mm;
+    font-size: 11.5pt;
+    line-height: 1.45;
     color: #334155;
   }
 
   .preamble-content p {
-    margin: 0 0 4mm;
+    margin: 0 0 3mm;
   }
 
   .preamble-content h2 {
-    font-size: 12pt;
+    font-size: 13pt;
     color: ${NAVY};
-    margin: 5mm 0 2mm;
+    margin: 4mm 0 2mm;
   }
 
   .preamble-content strong {
     color: ${NAVY};
   }
 
-  .preamble-content a {
-    color: #015CA2;
-    text-decoration: none;
-    font-weight: 700;
+  /* INDICATEURS CLES */
+
+  .overview-grid {
+    display: grid;
+    grid-template-columns: 30fr 30fr 40fr;
+    gap: 4mm;
+    height: 142mm;
+    align-items: center;
+  }
+
+  .overview-block {
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .overview-block img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+  }
+
+  /* Agrandissement leger des chiffres :
+     on conserve la largeur de la carte. */
+
+  .overview-stats img,
+  .overview-features img {
+    transform: scale(1.07);
+    transform-origin: center;
+  }
+
+  .overview-map img {
+    max-height: 140mm;
   }
 `;
 
 // =====================================================
-// 7. COUVERTURE AVEC LES TROIS LOGOS
+// 7. COUVERTURE
 // =====================================================
 
 const coverHTML = `
@@ -468,7 +479,6 @@ const coverHTML = `
     align-items:center;
     justify-content:space-between;
   ">
-
     <img src="${logoData}" class="logo-data">
 
     <div class="logos">
@@ -485,7 +495,6 @@ const coverHTML = `
     top:67mm;
     left:20mm;
   ">
-
     <div style="
       font-size:43pt;
       font-weight:800;
@@ -543,7 +552,7 @@ const coverHTML = `
 `;
 
 // =====================================================
-// 8. PAGE AVANT-PROPOS
+// 8. AVANT-PROPOS
 // =====================================================
 
 const preambleHTML = `
@@ -559,7 +568,7 @@ const preambleHTML = `
   </h1>
 
   <div class="accent" style="
-    margin-bottom:7mm;
+    margin-bottom:6mm;
   "></div>
 
   <div class="preamble-content">
@@ -642,7 +651,7 @@ const preambleHTML = `
 `;
 
 // =====================================================
-// 9. SOMMAIRE ILLUSTRE
+// 9. SOMMAIRE
 // =====================================================
 
 const tocHTML = `
@@ -750,7 +759,7 @@ const tocHTML = `
 `;
 
 // =====================================================
-// 10. PAGE DES INDICATEURS CLES
+// 10. INDICATEURS CLES - PAGE 4
 // =====================================================
 
 const overviewHTML = `
@@ -765,7 +774,6 @@ const overviewHTML = `
     justify-content:space-between;
     align-items:center;
   ">
-
     <div class="small-heading">
       PANORAMA TERRITORIAL
     </div>
@@ -792,17 +800,22 @@ const overviewHTML = `
   "></div>
 
   <div class="overview-grid">
-    <div class="overview-block">
-      <img src="${statsImage}">
+
+    <div class="overview-block overview-stats">
+      <img src="${statsImage}"
+           alt="Chiffres clés du territoire">
     </div>
 
-    <div class="overview-block">
-      <img src="${featuresImage}">
+    <div class="overview-block overview-features">
+      <img src="${featuresImage}"
+           alt="Caractéristiques du territoire">
     </div>
 
     <div class="overview-block overview-map">
-      <img src="${mapImage}">
+      <img src="${mapImage}"
+           alt="Carte du territoire">
     </div>
+
   </div>
 
   <div class="intro-footer">
@@ -891,7 +904,6 @@ const backCoverHTML = `
     bottom:0;
     height:78mm;
   ">
-
     <img src="${banner}" style="
       width:100%;
       height:100%;
@@ -909,7 +921,6 @@ const backCoverHTML = `
     align-items:center;
     justify-content:space-between;
   ">
-
     <img src="${logoData}" class="logo-data">
 
     <div class="logos">
@@ -920,12 +931,11 @@ const backCoverHTML = `
       </div>
     </div>
   </div>
-
 </div>
 `;
 
 // =====================================================
-// 12. GENERER LES QUATRE PAGES D'INTRODUCTION
+// 12. GENERATION DES PAGES INSTITUTIONNELLES
 // =====================================================
 
 const introBrowser = await chromium.launch({
@@ -943,33 +953,40 @@ try {
   try {
     const page = await context.newPage();
 
-    await page.setContent(`
+    const makeHTML = content => `
       <!DOCTYPE html>
       <html lang="fr">
       <head>
         <meta charset="UTF-8">
         <style>${css}</style>
       </head>
-      <body>
-        ${coverHTML}
-        ${preambleHTML}
-        ${tocHTML}
-        ${overviewHTML}
-      </body>
+      <body>${content}</body>
       </html>
-    `, {
-      waitUntil: 'load'
-    });
+    `;
 
-    await page.evaluate(async () => {
-      await document.fonts.ready;
+    async function waitImages() {
+      await page.evaluate(async () => {
+        await document.fonts.ready;
 
-      await Promise.all(
-        [...document.images].map(img =>
-          img.decode()
-        )
-      );
-    });
+        await Promise.all(
+          [...document.images].map(img =>
+            img.decode()
+          )
+        );
+      });
+    }
+
+    await page.setContent(
+      makeHTML(
+        coverHTML +
+        preambleHTML +
+        tocHTML +
+        overviewHTML
+      ),
+      { waitUntil: 'load' }
+    );
+
+    await waitImages();
 
     await page.pdf({
       path: path.join(OUT, '00-introduction.pdf'),
@@ -979,34 +996,18 @@ try {
       preferCSSPageSize: true
     });
 
-    // Generer separement la derniere page.
-    await page.setContent(`
-      <!DOCTYPE html>
-      <html lang="fr">
-      <head>
-        <meta charset="UTF-8">
-        <style>${css}</style>
-      </head>
-      <body>
-        ${backCoverHTML}
-      </body>
-      </html>
-    `, {
-      waitUntil: 'load'
-    });
+    await page.setContent(
+      makeHTML(backCoverHTML),
+      { waitUntil: 'load' }
+    );
 
-    await page.evaluate(async () => {
-      await document.fonts.ready;
-
-      await Promise.all(
-        [...document.images].map(img =>
-          img.decode()
-        )
-      );
-    });
+    await waitImages();
 
     await page.pdf({
-      path: path.join(OUT, '00-quatrieme-couverture.pdf'),
+      path: path.join(
+        OUT,
+        '00-quatrieme-couverture.pdf'
+      ),
       format: 'A4',
       landscape: true,
       printBackground: true,
@@ -1022,7 +1023,7 @@ try {
 }
 
 // =====================================================
-// 13. ASSEMBLAGE FINAL SANS REDUCTION
+// 13. ASSEMBLAGE FINAL
 // =====================================================
 
 const finalPDF = await PDFDocument.create();
@@ -1035,7 +1036,7 @@ const introPDF = await PDFDocument.load(
 
 if (introPDF.getPageCount() !== 4) {
   throw new Error(
-    `Introduction : 4 pages attendues, ` +
+    'Introduction : 4 pages attendues, ' +
     `${introPDF.getPageCount()} obtenues.`
   );
 }
@@ -1049,19 +1050,158 @@ for (const page of introPages) {
   finalPDF.addPage(page);
 }
 
-// Copier les PDF sans modifier leur taille.
+// Polices pour les en-tetes et la pagination.
+const font = await finalPDF.embedFont(
+  StandardFonts.Helvetica
+);
+
+const boldFont = await finalPDF.embedFont(
+  StandardFonts.HelveticaBold
+);
+
+// =====================================================
+// 14. AJOUT DES RUBRIQUES
+// =====================================================
+
 for (const section of sections) {
-  const copied = await finalPDF.copyPages(
+  const isPopulation =
+    section.number === 1 &&
+    section.pages >= 2;
+
+  if (!isPopulation) {
+    // Toutes les autres rubriques sont copiees
+    // sans aucune modification.
+
+    const copied = await finalPDF.copyPages(
+      section.source,
+      section.source.getPageIndices()
+    );
+
+    for (const page of copied) {
+      finalPDF.addPage(page);
+    }
+
+    continue;
+  }
+
+  // Premiere page Population : intacte.
+  const [firstPage] = await finalPDF.copyPages(
     section.source,
-    section.source.getPageIndices()
+    [0]
   );
 
-  for (const page of copied) {
-    finalPDF.addPage(page);
+  finalPDF.addPage(firstPage);
+
+  // Deuxieme page Population :
+  // ajouter un en-tete sans reencoder le graphique.
+
+  const sourcePage = section.source.getPage(1);
+
+  const [embedded] = await finalPDF.embedPages(
+    [sourcePage]
+  );
+
+  const { width, height } = sourcePage.getSize();
+
+  const newPage = finalPDF.addPage([
+    width,
+    height
+  ]);
+
+  // Deplacer le contenu original de 45 points
+  // vers le bas, sans le redimensionner.
+  //
+  // Cela libere une bande en haut pour le titre.
+  // Le contenu en bas de page doit etre controle
+  // sur le PDF final.
+
+  const offset = 45;
+
+  newPage.drawPage(embedded, {
+    x: 0,
+    y: -offset,
+    width,
+    height
+  });
+
+  // En-tete bleu nuit.
+  newPage.drawRectangle({
+    x: 0,
+    y: height - 46,
+    width,
+    height: 46,
+    color: pdfColor(NAVY)
+  });
+
+  // Filet rouge.
+  newPage.drawRectangle({
+    x: 0,
+    y: height - 46,
+    width: 5,
+    height: 46,
+    color: pdfColor(RED)
+  });
+
+  newPage.drawText(
+    'DÉMOGRAPHIE / Population',
+    {
+      x: 22,
+      y: height - 20,
+      size: 12,
+      font: boldFont,
+      color: rgb(1, 1, 1)
+    }
+  );
+
+  newPage.drawText(
+    'Évolution de la population par commune',
+    {
+      x: 22,
+      y: height - 36,
+      size: 9,
+      font,
+      color: rgb(0.82, 0.9, 1)
+    }
+  );
+
+  // Rappel de la source sous le bandeau.
+  newPage.drawText(
+    'Source : données du Panorama territorial',
+    {
+      x: 22,
+      y: height - 58,
+      size: 8,
+      font,
+      color: pdfColor('#64748B')
+    }
+  );
+
+  // Conserver les pages eventuelles suivantes.
+  if (section.pages > 2) {
+    const indices = Array.from(
+      { length: section.pages - 2 },
+      (_, i) => i + 2
+    );
+
+    const remaining = await finalPDF.copyPages(
+      section.source,
+      indices
+    );
+
+    for (const page of remaining) {
+      finalPDF.addPage(page);
+    }
   }
+
+  console.log(
+    'Page Population : en-tete ajoute au graphique'
+  );
 }
 
-// Ajouter la quatrieme de couverture.
+// =====================================================
+// 15. QUATRIEME DE COUVERTURE
+// =====================================================
+
 const backPDF = await PDFDocument.load(
   await fs.readFile(
     path.join(OUT, '00-quatrieme-couverture.pdf')
@@ -1082,18 +1222,11 @@ const [backPage] = await finalPDF.copyPages(
 finalPDF.addPage(backPage);
 
 // =====================================================
-// 14. PAGINATION
+// 16. PAGINATION
 // =====================================================
-
-const font = await finalPDF.embedFont(
-  StandardFonts.Helvetica
-);
 
 const pages = finalPDF.getPages();
 const total = pages.length;
-
-// Pas de numero sur la couverture,
-// l'avant-propos ni la quatrieme de couverture.
 
 for (let index = 2; index < total - 1; index++) {
   const page = pages[index];
@@ -1109,7 +1242,7 @@ for (let index = 2; index < total - 1; index++) {
 }
 
 // =====================================================
-// 15. METADONNEES
+// 17. METADONNEES
 // =====================================================
 
 finalPDF.setTitle(
