@@ -25,6 +25,31 @@ await fs.mkdir(OUT, { recursive: true });
 // CONFIGURATION DES THEMATIQUES
 // =====================================================
 
+
+/* =====================================================
+   EXPORT PDF MENSUEL - PERIMETRE AUTORISE
+
+   ATTENTION :
+   Seules les 4 thematiques historiques sont exportees.
+
+   Les nouvelles thematiques (Menages, Mobilite,
+   Sante, Patrimoine) sont volontairement exclues.
+
+   Pour les inclure plus tard :
+   1. Modifier cette liste
+   2. Adapter assemble.mjs
+   3. Adapter le controle dans panorama.yml
+   4. Tester le PDF avant publication
+   ===================================================== */
+
+const THEMES_AUTORISES_PDF = new Set([
+  'demographie',
+  'emploi',
+  'logements',
+  'entreprises'
+]);
+
+
 const THEMES = [
   {
     key: 'demographie',
@@ -1235,6 +1260,28 @@ try {
 
   for (const group of groups) {
     const theme = getTheme(group.title);
+
+    
+    // =================================================
+    // BLOCAGE DES NOUVELLES THEMATIQUES POUR LE PDF
+    //
+    // Seules Demographie, Emploi, Logements et
+    // Entreprises sont autorisees.
+    //
+    // Les nouvelles thematiques sont ignorees.
+    // NE PAS SUPPRIMER avant validation.
+    // =================================================
+
+    if (
+      !theme ||
+      !THEMES_AUTORISES_PDF.has(theme.key)
+    ) {
+      console.log(
+        `PDF EXCLU : ${group.title}`
+      );
+      continue;
+    }
+
 
     for (const item of group.items) {
       n++;
