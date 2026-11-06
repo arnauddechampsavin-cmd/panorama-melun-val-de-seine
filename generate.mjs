@@ -1420,3 +1420,21 @@ if (report.some(item =>
 )) {
   process.exitCode = 1;
 }
+
+
+// =====================================================
+// CONTROLE FINAL : 13 RUBRIQUES HISTORIQUES
+//
+// Ce controle empeche de valider une generation
+// incomplete ou contenant des rubriques inattendues.
+// =====================================================
+
+if (report.length !== 13) {
+  console.error(
+    `ERREUR : ${report.length} rubriques generees, ` +
+    '13 attendues.'
+  );
+
+  process.exitCode = 1;
+}
+
